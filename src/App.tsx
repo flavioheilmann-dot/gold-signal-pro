@@ -18,14 +18,12 @@ import { AccountPanel } from "@/components/AccountPanel";
 import { SignalHistory } from "@/components/SignalHistory";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { BrokerPanel } from "@/components/BrokerPanel";
-import { OrderTicket } from "@/components/OrderTicket";
 import { StrategyStatsPanel } from "@/components/StrategyStatsPanel";
 import { StrategyOptPanel } from "@/components/StrategyOptPanel";
 import { EdgeDetection } from "@/components/EdgeDetection";
 import { OvernightDrift } from "@/components/OvernightDrift";
 import { TradingJournal } from "@/components/TradingJournal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 
 import { fmtDateTime } from "@/lib/utils";
 
@@ -87,7 +85,6 @@ export default function App() {
   const [countdown, setCountdown] = useState(settings.refreshSec);
   const [now, setNow] = useState(() => new Date());
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [orderOpen, setOrderOpen] = useState(false);
   const [selectedEpic, setSelectedEpic] = useState("GOLD");
   const [scanAt, setScanAt] = useState<number | null>(null);
   const [strongAlert, setStrongAlert] = useState<StrongAlertData | null>(null);
@@ -200,17 +197,6 @@ export default function App() {
 
   const marketStatus = useMemo(() => getMarketStatus(now), [now]);
   const hot = decision.bias !== "flat" && decision.confidence >= HOT_MIN_CONF && !!levels;
-  const canOrder = !!(broker?.connected && broker?.tradingEnabled && active);
-  const orderDefaults =
-    canOrder && active
-      ? {
-          epic: active.epic,
-          direction: (decision.bias === "short" ? "SELL" : "BUY") as "BUY" | "SELL",
-          size: 0.1,
-          stopLevel: levels ? Math.round(levels.stopLoss) : snap?.atr ? Math.round(active.price - 1.5 * snap.atr) : 0,
-          profitLevel: levels ? Math.round(levels.takeProfit1) : snap?.atr ? Math.round(active.price + 3 * snap.atr) : 0,
-        }
-      : null;
 
   // history = the active asset's confirmed signal events
   const histEntries = useMemo<HistoryEntry[]>(
@@ -523,15 +509,8 @@ export default function App() {
           </Card>
 
           <Card>
-            <CardHeader className="flex-row items-center justify-between">
+            <CardHeader>
               <CardTitle>Trading-Setup · {active?.name ?? "—"}</CardTitle>
-              {canOrder ? (
-                <Button size="sm" variant={decision.bias === "short" ? "down" : "up"} onClick={() => setOrderOpen(true)}>
-                  {levels ? "Order vorbereiten →" : "Order manuell →"}
-                </Button>
-              ) : broker?.connected && !broker?.tradingEnabled ? (
-                <span className="font-mono text-[10px] text-muted-foreground">Orders aus (.env)</span>
-              ) : null}
             </CardHeader>
             <CardContent>
               {snap ? <TradingSetup decision={decision} levels={levels} timeframe={timeframe} /> : <div className="skeleton h-24 w-full" />}
@@ -668,19 +647,6 @@ export default function App() {
       </div>
 
       <SettingsPanel open={settingsOpen} settings={settings} onChange={setSettings} onClose={() => setSettingsOpen(false)} />
-
-      {orderDefaults && (
-        <OrderTicket
-          open={orderOpen}
-          env={broker?.env ?? "demo"}
-          defaults={orderDefaults}
-          onClose={() => setOrderOpen(false)}
-          onPlaced={() => {
-            refreshBroker();
-            setTimeout(() => setOrderOpen(false), 1500);
-          }}
-        />
-      )}
     </div>
   );
 }
