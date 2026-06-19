@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.vite
+.env
+server/.env
+
+*.log
+ngrok.exe
+server/trades.json

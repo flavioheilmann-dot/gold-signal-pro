@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* light theme */
+    --background: 220 30% 96%;
+    --foreground: 222 35% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 35% 12%;
+    --primary: 41 86% 55%;
+    --primary-foreground: 36 60% 8%;
+    --secondary: 220 20% 90%;
+    --secondary-foreground: 222 35% 18%;
+    --muted: 220 20% 90%;
+    --muted-foreground: 220 12% 42%;
+    --accent: 220 20% 90%;
+    --accent-foreground: 222 35% 18%;
+    --border: 220 18% 82%;
+    --input: 220 18% 82%;
+    --ring: 41 86% 55%;
+
+    --up: 152 86% 47%;
+    --down: 350 100% 62%;
+    --gold: 41 86% 55%;
+    --info: 211 100% 65%;
+    --violet: 255 92% 76%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222 38% 4%;
+    --foreground: 222 30% 90%;
+    --card: 222 34% 7%;
+    --card-foreground: 222 30% 90%;
+    --primary: 41 86% 55%;
+    --primary-foreground: 36 60% 8%;
+    --secondary: 220 30% 12%;
+    --secondary-foreground: 222 30% 88%;
+    --muted: 220 30% 14%;
+    --muted-foreground: 218 18% 56%;
+    --accent: 220 30% 14%;
+    --accent-foreground: 222 30% 88%;
+    --border: 218 32% 16%;
+    --input: 218 32% 16%;
+    --ring: 41 86% 55%;
+
+    --up: 152 86% 47%;
+    --down: 350 100% 62%;
+    --gold: 41 86% 55%;
+    --info: 211 100% 65%;
+    --violet: 255 92% 76%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* themed scrollbars */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-card/70 backdrop-blur-xl border border-white/5;
+  }
+  .mono {
+    @apply font-mono tabular-nums;
+  }
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--accent)) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded;
+  }
+}

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: gold-signal-scanner
+    runtime: node
+    plan: free
+    buildCommand: npm install --production
+    startCommand: node server/cloud-scanner.mjs
+    envVars:
+      - key: CAPITAL_ENV
+        sync: false
+      - key: CAPITAL_API_KEY
+        sync: false
+      - key: CAPITAL_IDENTIFIER
+        sync: false
+      - key: CAPITAL_API_PASSWORD
+        sync: false
+      - key: NTFY_TOPIC
+        sync: false
+      - key: NODE_VERSION
+        value: 20
