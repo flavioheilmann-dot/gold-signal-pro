@@ -40,6 +40,7 @@ import {
   stateLabel,
   backtestSignals,
   computeStats,
+  walkForward,
   gradeStrategy,
   detectEdges,
   detectOvernightDrift,
@@ -163,19 +164,19 @@ export default function App() {
         : null,
     [snap, active, decision.bias, decision.state, settings.params]
   );
-  // strategy stats (backtest + Monte Carlo)
-  const stratStats = useMemo(() => {
+  // strategy backtest (trades + stats + walk-forward), computed once
+  const backtest = useMemo(() => {
     if (!active) return null;
     const trades = backtestSignals(active.series, active.events, settings.params);
-    return computeStats(trades);
+    return { trades, stats: computeStats(trades), wf: walkForward(trades) };
   }, [active, settings.params]);
+  const stratStats = backtest?.stats ?? null;
 
   // strategy optimization grade
   const stratGrade = useMemo(() => {
-    if (!active || !stratStats || stratStats.totalTrades < 1) return null;
-    const trades = backtestSignals(active.series, active.events, settings.params);
-    return gradeStrategy(trades, stratStats, settings.params);
-  }, [active, stratStats, settings.params]);
+    if (!backtest || backtest.stats.totalTrades < 1) return null;
+    return gradeStrategy(backtest.trades, backtest.stats, settings.params);
+  }, [backtest, settings.params]);
 
   // edge detection
   const edges = useMemo(() => {
@@ -574,7 +575,12 @@ export default function App() {
             </CardHeader>
             <CardContent>
               {stratStats ? (
-                <StrategyStatsPanel stats={stratStats} assetName={active?.name ?? "—"} />
+                <StrategyStatsPanel
+                  stats={stratStats}
+                  trades={backtest?.trades ?? []}
+                  wf={backtest?.wf ?? null}
+                  assetName={active?.name ?? "—"}
+                />
               ) : (
                 <div className="skeleton h-40 w-full" />
               )}

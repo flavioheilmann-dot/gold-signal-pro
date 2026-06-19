@@ -620,14 +620,28 @@ export interface TradeResult {
   entry: number;
   exit: number;
   side: "long" | "short";
-  pnlPct: number;
+  pnlPct: number; // NET (after assumed cost)
+  grossPnlPct: number; // before cost
+  costPct: number; // spread + slippage assumption applied
+  rMultiple: number; // net P&L in units of initial risk (1R = SL distance)
+  exitReason: "tp" | "sl" | "signal" | "eod";
+  hitTP1: boolean; // reached TP1 before SL
+  hitTP2: boolean; // reached TP2 before SL
   bars: number;
 }
+
+/**
+ * Round-trip cost assumption (spread + slippage) as % of price, applied to
+ * every trade. Conservative default for gold/index CFDs. Backtests are
+ * close-based (no intrabar high/low), so treat results as indicative.
+ */
+export const DEFAULT_COST_PCT = 0.06;
 
 export function backtestSignals(
   s: StrategySeries,
   events: SignalEvent[],
-  p: StrategyParams
+  p: StrategyParams,
+  costPct = DEFAULT_COST_PCT
 ): TradeResult[] {
   const results: TradeResult[] = [];
   for (let i = 0; i < events.length; i++) {
@@ -638,34 +652,64 @@ export function backtestSignals(
     const entryIdx = ev.index;
     const atrVal = s.atr[entryIdx] ?? 0;
     if (!atrVal) continue;
-    const sl = side === "long" ? entryPrice - p.atrSL * atrVal : entryPrice + p.atrSL * atrVal;
-    const tp = side === "long" ? entryPrice + p.atrTP1 * atrVal : entryPrice - p.atrTP1 * atrVal;
 
-    let exitPrice = entryPrice;
-    let exitIdx = entryIdx;
-    for (let j = entryIdx + 1; j < s.prices.length; j++) {
+    const long = side === "long";
+    const sl = long ? entryPrice - p.atrSL * atrVal : entryPrice + p.atrSL * atrVal;
+    const tp1 = long ? entryPrice + p.atrTP1 * atrVal : entryPrice - p.atrTP1 * atrVal;
+    const tp2 = long ? entryPrice + p.atrTP2 * atrVal : entryPrice - p.atrTP2 * atrVal;
+    const riskPct = (Math.abs(entryPrice - sl) / entryPrice) * 100; // 1R in %
+
+    // holding window: until the next signal flips, else end of series
+    const windowEnd = i + 1 < events.length ? events[i + 1].index : s.prices.length - 1;
+
+    // first chronological touch of each level (close-based)
+    let slIdx = -1, tp1Idx = -1, tp2Idx = -1;
+    for (let j = entryIdx + 1; j <= windowEnd; j++) {
       const price = s.prices[j];
-      if (side === "long") {
-        if (price <= sl) { exitPrice = sl; exitIdx = j; break; }
-        if (price >= tp) { exitPrice = tp; exitIdx = j; break; }
-      } else {
-        if (price >= sl) { exitPrice = sl; exitIdx = j; break; }
-        if (price <= tp) { exitPrice = tp; exitIdx = j; break; }
-      }
-      if (i + 1 < events.length && j >= events[i + 1].index) {
-        exitPrice = price;
-        exitIdx = j;
-        break;
-      }
-      if (j === s.prices.length - 1) {
-        exitPrice = price;
-        exitIdx = j;
-      }
+      const hitSL = long ? price <= sl : price >= sl;
+      const hitT1 = long ? price >= tp1 : price <= tp1;
+      const hitT2 = long ? price >= tp2 : price <= tp2;
+      if (slIdx < 0 && hitSL) slIdx = j;
+      if (tp1Idx < 0 && hitT1) tp1Idx = j;
+      if (tp2Idx < 0 && hitT2) tp2Idx = j;
+      if (slIdx >= 0 && tp1Idx >= 0) break; // realised exit decided
     }
-    const pnlPct = side === "long"
+
+    const hitTP1 = tp1Idx >= 0 && (slIdx < 0 || tp1Idx < slIdx);
+    const hitTP2 = tp2Idx >= 0 && (slIdx < 0 || tp2Idx < slIdx);
+
+    // realised exit: first of SL / TP1, else close at window end
+    let exitPrice: number, exitIdx: number, exitReason: TradeResult["exitReason"];
+    const slFirst = slIdx >= 0 && (tp1Idx < 0 || slIdx <= tp1Idx);
+    if (slFirst) {
+      exitPrice = sl; exitIdx = slIdx; exitReason = "sl";
+    } else if (tp1Idx >= 0) {
+      exitPrice = tp1; exitIdx = tp1Idx; exitReason = "tp";
+    } else {
+      exitIdx = windowEnd;
+      exitPrice = s.prices[windowEnd];
+      exitReason = i + 1 < events.length ? "signal" : "eod";
+    }
+
+    const grossPnlPct = long
       ? ((exitPrice - entryPrice) / entryPrice) * 100
       : ((entryPrice - exitPrice) / entryPrice) * 100;
-    results.push({ entry: entryPrice, exit: exitPrice, side, pnlPct, bars: exitIdx - entryIdx });
+    const pnlPct = grossPnlPct - costPct;
+    const rMultiple = riskPct > 0 ? pnlPct / riskPct : 0;
+
+    results.push({
+      entry: entryPrice,
+      exit: exitPrice,
+      side,
+      pnlPct,
+      grossPnlPct,
+      costPct,
+      rMultiple,
+      exitReason,
+      hitTP1,
+      hitTP2,
+      bars: exitIdx - entryIdx,
+    });
   }
   return results;
 }
@@ -681,8 +725,20 @@ export interface StrategyStats {
   maxDrawdownPct: number;
   avgBarsInTrade: number;
   profitFactor: number;
+  avgRR: number; // Ø realised reward:risk (R-multiple)
+  tp1Rate: number; // share of trades that reached TP1 before SL
+  tp2Rate: number; // share of trades that reached TP2 before SL
+  maxConsecLosses: number; // longest losing streak
+  grossReturnPct: number; // sum of gross P&L
+  netReturnPct: number; // sum of net P&L (after cost)
+  costPctTotal: number; // total assumed cost drag
+  assumedCostPct: number; // per-trade cost assumption used
+  sufficientData: boolean; // >= 30 trades
   monteCarlo: { ruinPct: number; medianReturnPct: number; worstPct: number };
 }
+
+/** Minimum sample for the stats to be statistically meaningful. */
+export const MIN_TRADES = 30;
 
 export function computeStats(trades: TradeResult[]): StrategyStats {
   if (!trades.length) {
@@ -690,6 +746,9 @@ export function computeStats(trades: TradeResult[]): StrategyStats {
       totalTrades: 0, wins: 0, losses: 0, winRate: 0,
       avgWinPct: 0, avgLossPct: 0, expectancy: 0,
       maxDrawdownPct: 0, avgBarsInTrade: 0, profitFactor: 0,
+      avgRR: 0, tp1Rate: 0, tp2Rate: 0, maxConsecLosses: 0,
+      grossReturnPct: 0, netReturnPct: 0, costPctTotal: 0,
+      assumedCostPct: DEFAULT_COST_PCT, sufficientData: false,
       monteCarlo: { ruinPct: 0, medianReturnPct: 0, worstPct: 0 },
     };
   }
@@ -704,6 +763,19 @@ export function computeStats(trades: TradeResult[]): StrategyStats {
   const totalLoss = Math.abs(losses.reduce((s, t) => s + t.pnlPct, 0));
   const profitFactor = totalLoss > 0 ? totalWin / totalLoss : totalWin > 0 ? 99 : 0;
   const avgBars = trades.reduce((s, t) => s + t.bars, 0) / trades.length;
+
+  // reward:risk, TP hit-rates, cost drag, longest losing streak
+  const avgRR = trades.reduce((s, t) => s + t.rMultiple, 0) / trades.length;
+  const tp1Rate = trades.filter((t) => t.hitTP1).length / trades.length;
+  const tp2Rate = trades.filter((t) => t.hitTP2).length / trades.length;
+  const grossReturnPct = trades.reduce((s, t) => s + t.grossPnlPct, 0);
+  const netReturnPct = trades.reduce((s, t) => s + t.pnlPct, 0);
+  const costPctTotal = trades.reduce((s, t) => s + t.costPct, 0);
+  let consec = 0, maxConsecLosses = 0;
+  for (const t of trades) {
+    if (t.pnlPct <= 0) { consec++; if (consec > maxConsecLosses) maxConsecLosses = consec; }
+    else consec = 0;
+  }
 
   let peak = 0;
   let equity = 0;
@@ -745,12 +817,58 @@ export function computeStats(trades: TradeResult[]): StrategyStats {
     maxDrawdownPct: maxDd,
     avgBarsInTrade: avgBars,
     profitFactor,
+    avgRR,
+    tp1Rate,
+    tp2Rate,
+    maxConsecLosses,
+    grossReturnPct,
+    netReturnPct,
+    costPctTotal,
+    assumedCostPct: trades[0]?.costPct ?? DEFAULT_COST_PCT,
+    sufficientData: trades.length >= MIN_TRADES,
     monteCarlo: {
       ruinPct: (ruinCount / sims) * 100,
       medianReturnPct: medianReturn,
       worstPct: worstReturn,
     },
   };
+}
+
+// ── Walk-forward (in-sample vs out-of-sample) ──────────────
+export interface WalkForward {
+  splitIndex: number;
+  inSample: StrategyStats;
+  outSample: StrategyStats;
+  consistent: boolean; // both windows profitable in the same direction
+}
+
+/** Split trades chronologically (default 70/30) and score each half. */
+export function walkForward(trades: TradeResult[], ratio = 0.7): WalkForward | null {
+  if (trades.length < 2 * MIN_TRADES) return null; // need enough on both sides
+  const splitIndex = Math.floor(trades.length * ratio);
+  const inSample = computeStats(trades.slice(0, splitIndex));
+  const outSample = computeStats(trades.slice(splitIndex));
+  const consistent = inSample.expectancy > 0 && outSample.expectancy > 0;
+  return { splitIndex, inSample, outSample, consistent };
+}
+
+// ── Export helpers (CSV / JSON) ────────────────────────────
+export function tradesToCSV(trades: TradeResult[]): string {
+  const head = ["#", "Seite", "Entry", "Exit", "Brutto_%", "Netto_%", "R", "Exit-Grund", "TP1", "TP2", "Kerzen"];
+  const rows = trades.map((t, i) => [
+    i + 1,
+    t.side === "long" ? "Long" : "Short",
+    t.entry.toFixed(2),
+    t.exit.toFixed(2),
+    t.grossPnlPct.toFixed(2),
+    t.pnlPct.toFixed(2),
+    t.rMultiple.toFixed(2),
+    t.exitReason.toUpperCase(),
+    t.hitTP1 ? "1" : "0",
+    t.hitTP2 ? "1" : "0",
+    t.bars,
+  ]);
+  return [head, ...rows].map((r) => r.join(";")).join("\n");
 }
 
 // ── Strategy Optimization ──────────
