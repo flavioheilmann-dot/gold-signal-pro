@@ -267,10 +267,12 @@ async function main() {
         const tp2 = atrLast ? (long ? price + P.atrTP2 * atrLast : price - P.atrTP2 * atrLast) : null;
 
         const lines = [
-          `STARKES SIGNAL · ${decision.confidence}% Konviktion`,
+          `STARKES SIGNAL · ${decision.confidence}% Konfidenz`,
           `Entry: ${price.toFixed(2)}`,
           ...(sl != null ? [`SL: ${sl.toFixed(2)}`, `TP1: ${tp1.toFixed(2)}`, `TP2: ${tp2.toFixed(2)}`] : []),
           `Grund: ${decision.reason}`,
+          `Quelle: Capital.com · 15M`,
+          `Kein Finanzrat - zuerst selbst pruefen.`,
         ];
 
         const tag = long ? "chart_with_upwards_trend" : "chart_with_downwards_trend";

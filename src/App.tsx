@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LineChart } from "lucide-react";
 
 import { Header } from "@/components/Header";
+import type { DataMode, SourceInfo } from "@/components/DataSourceStatus";
 import { NewsBanner } from "@/components/NewsBanner";
 import { StrongAlert, type StrongAlertData } from "@/components/StrongAlert";
 import { PositionAlert, type PositionAlertData } from "@/components/PositionAlert";
@@ -272,20 +273,22 @@ export default function App() {
       const buy = strong.decision.state === "STRONG_BUY";
       beep(buy);
       setTimeout(() => beep(buy), 260);
-      notify(`🔔 ${strong.asset.name}: ${stateLabel(strong.decision.state)}`, `${strong.decision.confidence}% Konviktion · jetzt prüfen`);
+      notify(`🔔 ${strong.asset.name}: ${stateLabel(strong.decision.state)}`, `${strong.decision.confidence}% Konfidenz · jetzt prüfen`);
     }
     if (settings.ntfyTopic) {
       const dir = strong.decision.state === "STRONG_BUY" ? "LONG" : "SHORT";
       const snap = snapshotAt(strong.series, strong.series.prices.length - 1, settings.params);
       const lvl = snap.atr ? levelsFor(strong.decision.state, strong.price, snap.atr, settings.params) : null;
       const lines = [
-        `${dir} · ${strong.decision.confidence}% Konviktion`,
+        `${dir} · ${strong.decision.confidence}% Konfidenz`,
         `Entry: ${strong.price.toFixed(2)}`,
         ...(lvl ? [
           `SL: ${lvl.stopLoss.toFixed(2)}`,
           `TP1: ${lvl.takeProfit1.toFixed(2)} (R:R 1:${lvl.rr1.toFixed(1)})`,
           `TP2: ${lvl.takeProfit2.toFixed(2)} (R:R 1:${lvl.rr2.toFixed(1)})`,
         ] : []),
+        "Quelle: Capital.com · 15M",
+        "Kein Finanzrat – zuerst selbst prüfen.",
       ];
       const tag = strong.decision.state === "STRONG_BUY" ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
       pushNtfy(settings.ntfyTopic, `🔔 ${strong.asset.name}: ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
@@ -401,7 +404,7 @@ export default function App() {
 
   const exportCSV = () => {
     if (!histEntries.length) return;
-    const head = ["Zeit", "Signal", "Preis", "Konviktion_%"];
+    const head = ["Zeit", "Signal", "Preis", "Konfidenz_%"];
     const rows = histEntries.map((h) => [fmtDateTime(h.time), stateLabel(h.state), h.price.toFixed(2), h.confidence]);
     const csv = [head, ...rows].map((r) => r.join(";")).join("\n");
     const a = document.createElement("a");
@@ -418,12 +421,30 @@ export default function App() {
     sourceLabel: active?.sourceLabel ?? "—",
     note: active?.note,
   };
-  const source = {
+  const dataMode: DataMode = connected
+    ? "LIVE_CAPITAL"
+    : !data
+      ? "OFFLINE"
+      : data.candleState === "sim"
+        ? "SIMULATION"
+        : data.xauState === "live"
+          ? "LIVE_XAUUSD"
+          : "LIVE_PAXG_PROXY";
+
+  const timeframe = connected ? "15M" : data?.timeframe ?? "—";
+
+  const source: SourceInfo = {
+    mode: dataMode,
     sourceLabel: connected ? "Capital.com" : data?.candleSource ?? "—",
-    timeframe: "15M",
+    timeframe,
     fetchedAt: connected ? scanAt : data?.fetchedAt ?? null,
     refreshSec: settings.refreshSec,
-    offline: connected ? false : data?.candleState === "sim",
+    proxyNote:
+      dataMode === "SIMULATION"
+        ? "Demodaten – keine echten Kurse"
+        : dataMode === "LIVE_PAXG_PROXY"
+          ? "PAXG-Proxy statt XAU/USD"
+          : undefined,
   };
 
   return (
@@ -480,7 +501,7 @@ export default function App() {
           <Card>
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-1.5">
-                <LineChart className="h-3.5 w-3.5" /> {active?.name ?? "—"} · 15M Day-Chart
+                <LineChart className="h-3.5 w-3.5" /> {active?.name ?? "—"} · {timeframe} {connected ? "Day-Chart" : "Proxy-Chart"}
               </CardTitle>
               <div className="hidden items-center gap-3 font-mono text-[10px] text-muted-foreground sm:flex">
                 <span className="text-gold">Preis</span>
@@ -636,7 +657,7 @@ export default function App() {
       </main>
 
       <div className="shrink-0 border-t border-border bg-card/60 px-4 py-1.5 text-center font-mono text-[10px] text-muted-foreground">
-        Multi-Asset Day-Trading · 15M Box-System + EMA 9/21/50 + MACD + RSI · <kbd className="text-foreground">S</kbd> Refresh ·{" "}
+        Multi-Asset Day-Trading · {timeframe} Box-System + EMA 9/21/50 + MACD + RSI · <kbd className="text-foreground">S</kbd> Refresh ·{" "}
         <kbd className="text-foreground">A</kbd> Alarm · Keine Anlageberatung
       </div>
 

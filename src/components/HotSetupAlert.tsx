@@ -50,7 +50,7 @@ export function HotSetupAlert({
           </span>
           <div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              ⚡ Sehr gutes Setup · {decision.confidence}% Konviktion
+              ⚡ Sehr gutes Setup · {decision.confidence}% Konfidenz
             </div>
             <div className={cn("font-mono text-lg font-bold leading-tight", long ? "text-up" : "text-down")}>
               {action}

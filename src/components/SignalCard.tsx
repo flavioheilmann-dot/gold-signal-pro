@@ -75,7 +75,7 @@ export function SignalCard({ decision, factors }: { decision: Decision; factors:
               {stateLabel(decision.state)}
             </div>
             <div className="mt-1 max-w-md text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{decision.confidence}% Konviktion</span>{" "}
+              <span className="font-medium text-foreground">{decision.confidence}% Konfidenz</span>{" "}
               — {decision.bias === "flat" ? "kein Day-Setup" : "wegen"}: {decision.reason}
             </div>
           </div>

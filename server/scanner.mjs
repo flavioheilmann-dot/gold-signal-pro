@@ -306,7 +306,7 @@ export function startScanner(capFn, ntfyTopic) {
           const lvl = atrVal ? levelsFor(decision.state, price, atrVal) : null;
 
           const lines = [
-            `STARKES SIGNAL · ${decision.confidence}% Konviktion`,
+            `STARKES SIGNAL · ${decision.confidence}% Konfidenz`,
             `Entry: ${price.toFixed(2)}`,
             ...(lvl ? [
               `SL: ${lvl.sl.toFixed(2)}`,

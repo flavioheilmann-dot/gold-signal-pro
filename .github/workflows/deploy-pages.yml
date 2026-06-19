@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch: {}
 
 permissions:
@@ -23,7 +23,10 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npx vite build
+      - name: Type-check
+        run: npx tsc --noEmit
+      - name: Build
+        run: npx vite build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
