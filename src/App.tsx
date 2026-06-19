@@ -300,8 +300,9 @@ export default function App() {
     const key = `overnight:${overnightSetup.asset}:${new Date().toDateString()}`;
     if (key === overnightPushedRef.current) return;
     overnightPushedRef.current = key;
+    const dir = overnightSetup.direction === "long" ? "LONG" : "SHORT";
     const lines = [
-      `LONG · ${overnightSetup.confidence}% Konfidenz`,
+      `${dir} · ${overnightSetup.confidence}% Konfidenz`,
       `Entry: ${overnightSetup.entry.toFixed(2)}`,
       `SL: ${overnightSetup.stopLoss.toFixed(2)}`,
       `TP: ${overnightSetup.takeProfit.toFixed(2)}`,
@@ -310,7 +311,8 @@ export default function App() {
       "",
       "⏰ Einstiegsfenster: 22:00–01:00 MESZ",
     ];
-    pushNtfy(settings.ntfyTopic, `🌙 Overnight Drift: ${overnightSetup.asset}`, lines.join("\n"), ["crescent_moon", "chart_with_upwards_trend"]);
+    const tag = overnightSetup.direction === "long" ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
+    pushNtfy(settings.ntfyTopic, `🌙 Overnight ${dir}: ${overnightSetup.asset}`, lines.join("\n"), ["crescent_moon", tag]);
     if (settings.alarmOn) {
       notify(`🌙 Overnight Drift: ${overnightSetup.asset}`, `${overnightSetup.confidence}% Konfidenz — Fenster offen`);
     }

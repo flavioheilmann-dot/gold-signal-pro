@@ -961,8 +961,9 @@ export interface OvernightSetup {
   stopLoss: number;
   takeProfit: number;
   reasons: string[];
-  windowOpen: boolean; // true if we're in the entry window (20:00–23:00 UTC)
-  nextWindow: string;  // human-readable next window time
+  contraReasons: string[];
+  windowOpen: boolean;
+  nextWindow: string;
 }
 
 export function detectOvernightDrift(
@@ -971,82 +972,142 @@ export function detectOvernightDrift(
   nowUtcHour: number,
   assetType: "index" | "metal" | "forex" | "crypto",
 ): OvernightSetup | null {
-  // overnight drift is most reliable for US indices
-  if (assetType !== "index") return null;
+  if (assetType !== "index" && assetType !== "forex") return null;
 
-  const atr = snap.atr;
-  if (!atr) return null;
+  const a = snap.atr;
+  if (!a) return null;
+  const ef = snap.emaFast, es = snap.emaSlow, et = snap.emaTrend;
+  const r = snap.rsi, hist = snap.macdHist;
+  if (ef == null || es == null || et == null) return null;
 
-  // entry window: 20:00–23:00 UTC (22:00–01:00 MESZ)
   const windowOpen = nowUtcHour >= 20 || nowUtcHour < 1;
 
-  const reasons: string[] = [];
-  let score = 0;
+  // Score LONG and SHORT independently, pick the stronger one
+  const longReasons: string[] = [];
+  const longContra: string[] = [];
+  let longScore = 0;
 
-  // 1. Trend structure: price above EMA50 = bullish overnight bias
-  if (snap.emaTrend != null && price > snap.emaTrend) {
-    score += 25;
-    reasons.push("Preis über EMA50 — bullischer Trend intakt");
-  } else if (snap.emaTrend != null && price < snap.emaTrend) {
-    score -= 10;
+  const shortReasons: string[] = [];
+  const shortContra: string[] = [];
+  let shortScore = 0;
+
+  // ── 1. EMA-Struktur (max 25 Punkte) ──
+  if (ef > es && es > et) {
+    longScore += 25;
+    longReasons.push("EMAs bullisch gestapelt (9 > 21 > 50)");
+    shortContra.push("EMAs bullisch — gegen Short");
+  } else if (ef < es && es < et) {
+    shortScore += 25;
+    shortReasons.push("EMAs bärisch gestapelt (9 < 21 < 50)");
+    longContra.push("EMAs bärisch — gegen Long");
+  } else {
+    longContra.push("EMAs nicht klar geordnet");
+    shortContra.push("EMAs nicht klar geordnet");
   }
 
-  // 2. EMA alignment (fast > slow > trend = strong uptrend)
-  if (snap.emaFast != null && snap.emaSlow != null && snap.emaTrend != null) {
-    if (snap.emaFast > snap.emaSlow && snap.emaSlow > snap.emaTrend) {
-      score += 20;
-      reasons.push("EMA-Struktur bullisch (9 > 21 > 50)");
+  // ── 2. Preis vs EMA50 (max 20 Punkte) ──
+  if (price > et) {
+    longScore += 20;
+    longReasons.push(`Preis über EMA50 (${et.toFixed(1)})`);
+    shortContra.push("Preis über EMA50");
+  } else {
+    shortScore += 20;
+    shortReasons.push(`Preis unter EMA50 (${et.toFixed(1)})`);
+    longContra.push("Preis unter EMA50");
+  }
+
+  // ── 3. MACD-Momentum (max 15 Punkte) ──
+  if (hist != null) {
+    if (hist > 0) {
+      longScore += 15;
+      longReasons.push(`MACD positiv (+${hist.toFixed(2)})`);
+    } else if (hist < 0) {
+      shortScore += 15;
+      shortReasons.push(`MACD negativ (${hist.toFixed(2)})`);
     }
   }
 
-  // 3. RSI not overbought (sweet spot 40–65)
-  if (snap.rsi != null) {
-    if (snap.rsi >= 40 && snap.rsi <= 65) {
-      score += 15;
-      reasons.push(`RSI ${snap.rsi.toFixed(0)} — nicht überkauft, Raum nach oben`);
-    } else if (snap.rsi > 75) {
-      score -= 20;
-      reasons.push(`RSI ${snap.rsi.toFixed(0)} — überkauft, Overnight riskant`);
+  // ── 4. RSI (max 15 Punkte, Abzug bei Extrem) ──
+  if (r != null) {
+    if (r >= 40 && r <= 62) {
+      longScore += 15;
+      longReasons.push(`RSI ${r.toFixed(0)} — Raum nach oben`);
+    } else if (r > 72) {
+      longScore -= 15;
+      longContra.push(`RSI ${r.toFixed(0)} — überkauft`);
+    }
+    if (r >= 38 && r <= 60) {
+      shortScore += 15;
+      shortReasons.push(`RSI ${r.toFixed(0)} — Raum nach unten`);
+    } else if (r < 28) {
+      shortScore -= 15;
+      shortContra.push(`RSI ${r.toFixed(0)} — überverkauft`);
     }
   }
 
-  // 4. MACD momentum positive
-  if (snap.macdHist != null && snap.macdHist > 0) {
-    score += 15;
-    reasons.push("MACD-Momentum positiv");
-  }
-
-  // 5. Price not too far from EMA (no overextension)
-  if (snap.emaTrend != null && atr > 0) {
-    const dist = Math.abs(price - snap.emaTrend) / atr;
-    if (dist < 2) {
-      score += 10;
-      reasons.push("Preis nahe EMA50 — nicht überdehnt");
-    } else if (dist > 4) {
-      score -= 15;
-      reasons.push("Preis weit von EMA50 — überdehnt");
+  // ── 5. Überdehnungs-Check (max 10 Punkte / Abzug 20) ──
+  const dist = Math.abs(price - et) / a;
+  if (dist < 2.0) {
+    longScore += 10;
+    shortScore += 10;
+    const side = price > et ? "Long" : "Short";
+    (price > et ? longReasons : shortReasons).push(`Nahe EMA50 (${dist.toFixed(1)}× ATR) — guter ${side}-Einstieg`);
+  } else if (dist > 3.5) {
+    if (price > et) {
+      longScore -= 20;
+      longContra.push(`Überdehnt nach oben (${dist.toFixed(1)}× ATR über EMA50)`);
+      shortScore += 10;
+      shortReasons.push(`Überdehnt nach oben — Pullback-Short möglich`);
+    } else {
+      shortScore -= 20;
+      shortContra.push(`Überdehnt nach unten (${dist.toFixed(1)}× ATR unter EMA50)`);
+      longScore += 10;
+      longReasons.push(`Überdehnt nach unten — Bounce-Long möglich`);
     }
   }
 
-  // 6. Trend is up
+  // ── 6. Day-Trend Bestätigung (max 15 Punkte) ──
   if (snap.trend === "up") {
-    score += 15;
-    reasons.push("Day-Trend aufwärts");
+    longScore += 15;
+    longReasons.push("Intraday-Trend aufwärts bestätigt");
+  } else if (snap.trend === "down") {
+    shortScore += 15;
+    shortReasons.push("Intraday-Trend abwärts bestätigt");
   }
 
-  const confidence = Math.max(0, Math.min(100, score));
-  if (confidence < 40) return null;
+  // ── 7. Box-Position als Kontext ──
+  if (snap.boxPosition === "above") {
+    longScore += 5;
+    longReasons.push("Preis über der Box — bullische Struktur");
+  } else if (snap.boxPosition === "below") {
+    shortScore += 5;
+    shortReasons.push("Preis unter der Box — bärische Struktur");
+  }
 
-  const direction = "long";
-  const sl = price - atr * 1.5;
-  const tp = price + atr * 2;
+  // ── Entscheidung: stärkere Seite gewinnt ──
+  const longConf = Math.max(0, Math.min(100, longScore));
+  const shortConf = Math.max(0, Math.min(100, shortScore));
+
+  // Mindestens 50% Konfidenz UND mindestens 3 Gründe
+  const longValid = longConf >= 50 && longReasons.length >= 3;
+  const shortValid = shortConf >= 50 && shortReasons.length >= 3;
+
+  if (!longValid && !shortValid) return null;
+
+  // Kein Signal wenn beide Seiten fast gleich stark (unklar)
+  if (longValid && shortValid && Math.abs(longConf - shortConf) < 15) return null;
+
+  const goLong = longValid && (!shortValid || longConf > shortConf);
+  const direction: "long" | "short" = goLong ? "long" : "short";
+  const confidence = goLong ? longConf : shortConf;
+  const reasons = goLong ? longReasons : shortReasons;
+  const contraReasons = goLong ? longContra : shortContra;
+
+  const sl = goLong ? price - a * 1.5 : price + a * 1.5;
+  const tp = goLong ? price + a * 2.0 : price - a * 2.0;
 
   let nextWindow = "Heute 22:00 MESZ";
-  if (windowOpen) {
-    nextWindow = "JETZT — Fenster offen";
-  } else if (nowUtcHour >= 1 && nowUtcHour < 20) {
-    nextWindow = "Heute 22:00 MESZ";
-  }
+  if (windowOpen) nextWindow = "JETZT — Fenster offen";
 
   return {
     asset: "",
@@ -1056,6 +1117,7 @@ export function detectOvernightDrift(
     stopLoss: sl,
     takeProfit: tp,
     reasons,
+    contraReasons,
     windowOpen,
     nextWindow,
   };

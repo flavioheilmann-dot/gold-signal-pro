@@ -1,4 +1,4 @@
-import { Moon, Clock, TrendingUp, ShieldAlert } from "lucide-react";
+import { Moon, Clock, TrendingUp, TrendingDown, ShieldAlert, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { OvernightSetup } from "@/lib/signalEngine";
 
@@ -16,26 +16,42 @@ export function OvernightDrift({ setup, assetName }: { setup: OvernightSetup | n
     );
   }
 
+  const long = setup.direction === "long";
   const high = setup.confidence >= 70;
   const mid = setup.confidence >= 55;
+  const dirColor = long ? "up" : "down";
+  const TrendIcon = long ? TrendingUp : TrendingDown;
 
   return (
     <div className="space-y-2">
-      {/* confidence + window */}
+      {/* direction + confidence + window */}
       <div className="flex items-center gap-3">
         <div className={cn(
           "grid h-12 w-12 place-items-center rounded-lg border text-lg",
-          high ? "border-up/30 bg-up/15 text-up" : mid ? "border-gold/30 bg-gold/10 text-gold" : "border-border bg-muted/20 text-muted-foreground"
+          high
+            ? long ? "border-up/30 bg-up/15 text-up" : "border-down/30 bg-down/15 text-down"
+            : mid
+              ? "border-gold/30 bg-gold/10 text-gold"
+              : "border-border bg-muted/20 text-muted-foreground"
         )}>
           <Moon className="h-5 w-5" />
         </div>
         <div className="flex-1 space-y-0.5">
           <div className="flex items-center gap-2">
-            <span className={cn("text-sm font-bold", high ? "text-up" : mid ? "text-gold" : "text-muted-foreground")}>
+            <span className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+              long ? "bg-up/15 text-up" : "bg-down/15 text-down"
+            )}>
+              {long ? "LONG" : "SHORT"}
+            </span>
+            <span className={cn("text-sm font-bold", high ? `text-${dirColor}` : mid ? "text-gold" : "text-muted-foreground")}>
               {setup.confidence}% Konfidenz
             </span>
             {setup.windowOpen && (
-              <span className="rounded-full bg-up/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-up animate-pulse">
+              <span className={cn(
+                "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider animate-pulse",
+                long ? "bg-up/20 text-up" : "bg-down/20 text-down"
+              )}>
                 Fenster offen
               </span>
             )}
@@ -57,25 +73,41 @@ export function OvernightDrift({ setup, assetName }: { setup: OvernightSetup | n
           <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Stop-Loss</div>
           <div className="text-xs font-bold text-down">{fmt(setup.stopLoss)}</div>
         </div>
-        <div className="rounded-md border border-up/20 bg-up/5 px-2 py-1.5 text-center">
+        <div className={cn("rounded-md border px-2 py-1.5 text-center", long ? "border-up/20 bg-up/5" : "border-up/20 bg-up/5")}>
           <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Take Profit</div>
           <div className="text-xs font-bold text-up">{fmt(setup.takeProfit)}</div>
         </div>
       </div>
 
-      {/* reasons */}
+      {/* reasons PRO */}
       <div className="space-y-1">
-        <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-          <TrendingUp className="h-3 w-3" />
-          Gründe
+        <div className={cn("flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest", long ? "text-up/70" : "text-down/70")}>
+          <TrendIcon className="h-3 w-3" />
+          Dafür ({setup.reasons.length})
         </div>
         {setup.reasons.map((r, i) => (
           <div key={i} className="flex items-start gap-2 text-[11px] text-foreground/80">
-            <span className="mt-0.5 text-up">✓</span>
+            <span className={cn("mt-0.5", long ? "text-up" : "text-down")}>✓</span>
             {r}
           </div>
         ))}
       </div>
+
+      {/* reasons CONTRA */}
+      {setup.contraReasons.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-muted-foreground/70">
+            <AlertTriangle className="h-3 w-3" />
+            Dagegen ({setup.contraReasons.length})
+          </div>
+          {setup.contraReasons.map((r, i) => (
+            <div key={i} className="flex items-start gap-2 text-[11px] text-muted-foreground">
+              <span className="mt-0.5 text-gold">⚠</span>
+              {r}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* disclaimer */}
       <div className="flex items-start gap-1.5 rounded-md border border-gold/20 bg-gold/5 px-2.5 py-1.5 text-[10px] text-gold">
