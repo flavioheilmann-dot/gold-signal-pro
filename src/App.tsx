@@ -489,7 +489,7 @@ export default function App() {
         <div className="flex flex-col gap-4">
           {hot && levels && <HotSetupAlert decision={decision} levels={levels} marketOpen={marketStatus.open} />}
 
-          {snap ? <SignalCard decision={decision} factors={factors} /> : <div className="skeleton h-40 w-full" />}
+          {snap ? <SignalCard decision={decision} factors={factors} timeframe={timeframe} /> : <div className="skeleton h-40 w-full" />}
 
           {!marketStatus.open && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5 text-xs">
@@ -533,7 +533,7 @@ export default function App() {
               ) : null}
             </CardHeader>
             <CardContent>
-              {snap ? <TradingSetup decision={decision} levels={levels} /> : <div className="skeleton h-24 w-full" />}
+              {snap ? <TradingSetup decision={decision} levels={levels} timeframe={timeframe} /> : <div className="skeleton h-24 w-full" />}
             </CardContent>
           </Card>
 

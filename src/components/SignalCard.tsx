@@ -46,7 +46,7 @@ function FactorChip({ factor }: { factor: Factor }) {
   );
 }
 
-export function SignalCard({ decision, factors }: { decision: Decision; factors: Factor[] }) {
+export function SignalCard({ decision, factors, timeframe = "15M" }: { decision: Decision; factors: Factor[]; timeframe?: string }) {
   const t = THEME[decision.state];
   return (
     <div
@@ -85,7 +85,7 @@ export function SignalCard({ decision, factors }: { decision: Decision; factors:
           <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             Day-Trend · TF
           </div>
-          <div className="mono text-sm font-semibold">{trendLabel(decision.trend)} · 15M</div>
+          <div className="mono text-sm font-semibold">{trendLabel(decision.trend)} · {timeframe}</div>
         </div>
       </div>
 

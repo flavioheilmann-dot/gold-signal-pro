@@ -24,7 +24,7 @@ const FIELDS: { key: keyof StrategyParams; label: string; step?: string }[] = [
   { key: "macdSignal", label: "MACD Signal" },
   { key: "atrPeriod", label: "ATR Periode" },
   { key: "strengthMin", label: "Trendstaerke min", step: "0.1" },
-  { key: "confirmBars", label: "Bestaetigung (15M Bars)" },
+  { key: "confirmBars", label: "Bestaetigung (Bars)" },
   { key: "atrSL", label: "Day-Stop (xATR)", step: "0.1" },
   { key: "atrTP1", label: "TP1 (xATR)", step: "0.1" },
   { key: "atrTP2", label: "TP2 (xATR)", step: "0.1" },

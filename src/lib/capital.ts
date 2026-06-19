@@ -1,5 +1,15 @@
-// Frontend client for the local Capital.com proxy (/api/capital/*).
+// Frontend client for the Capital.com proxy (/api/capital/*).
 // Everything degrades gracefully when the backend isn't running.
+//
+// VITE_API_BASE_URL — base of the backend proxy. Empty = same-origin
+//   (dev proxy / co-hosted). On GitHub Pages this stays empty, so the
+//   broker calls 404 and the app drops to PUBLIC mode automatically.
+// VITE_PUBLIC_MODE  — "true" forces demo/public mode (no broker calls,
+//   no order UI) even if a backend would be reachable.
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const CAPITAL = `${API_BASE}/api/capital`;
+export const PUBLIC_MODE = import.meta.env.VITE_PUBLIC_MODE === "true";
 
 export interface BrokerStatus {
   configured: boolean;
@@ -39,12 +49,15 @@ export interface OrderRequest {
 }
 
 async function jget<T>(path: string): Promise<T> {
-  const res = await fetch(`/api/capital${path}`);
+  const res = await fetch(`${CAPITAL}${path}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<T>;
 }
 
 export async function getStatus(): Promise<BrokerStatus> {
+  if (PUBLIC_MODE) {
+    return { configured: false, connected: false, env: "public", tradingEnabled: false, goldEpic: "GOLD" };
+  }
   try {
     return await jget<BrokerStatus>("/status");
   } catch {
@@ -77,7 +90,7 @@ export async function getCandles(
 export async function placeOrder(
   order: OrderRequest
 ): Promise<{ ok: boolean; dealReference: string | null }> {
-  const res = await fetch("/api/capital/order", {
+  const res = await fetch(`${CAPITAL}/order`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(order),
@@ -120,7 +133,7 @@ export async function getTradeHistory(days = 30): Promise<TradeHistory> {
   const from = new Date(Date.now() - days * 86400000).toISOString();
   const to = new Date().toISOString();
   try {
-    const res = await fetch(`/api/capital/history?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    const res = await fetch(`${CAPITAL}/history?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     if (!res.ok) return { activities: [], transactions: [] };
     return await res.json();
   } catch {

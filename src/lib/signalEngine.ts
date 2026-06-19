@@ -364,7 +364,7 @@ export function rawBiasAt(s: StrategySeries, i: number, p: StrategyParams): RawD
   const { emaFast: ef, emaSlow: es, emaTrend: et, macdHist: hist, atr: a, rsi: r, trigger } = snap;
 
   if (ef == null || es == null || et == null || hist == null || !a || snap.boxHigh == null || snap.boxLow == null) {
-    return { state: "WAIT", bias: "flat", confidence: 0, trend: "range", reason: "Noch zu wenig 15M-Daten" };
+    return { state: "WAIT", bias: "flat", confidence: 0, trend: "range", reason: "Noch zu wenig Daten" };
   }
 
   const longTrigger = trigger === "box_breakout_long" || trigger === "rejection_long";

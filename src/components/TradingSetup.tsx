@@ -75,9 +75,11 @@ function simpleExplanation(decision: Decision, levels: TradeLevels): string {
 export function TradingSetup({
   decision,
   levels,
+  timeframe = "15M",
 }: {
   decision: Decision;
   levels: TradeLevels | null;
+  timeframe?: string;
 }) {
   if (!levels || decision.bias === "flat") {
     return (
@@ -140,7 +142,7 @@ export function TradingSetup({
         <Cell label="Stop-Loss" value={fmtUsd(levels.stopLoss, 1)} tone="down" hint={`${fmtUsd(Math.abs(levels.entry - levels.stopLoss), 1)} Abstand`} />
         <Cell label="Take Profit 1" value={fmtUsd(levels.takeProfit1, 1)} tone="up" hint={`R:R 1:${levels.rr1.toFixed(1)}`} />
         <Cell label="Take Profit 2" value={fmtUsd(levels.takeProfit2, 1)} tone="up" hint={`R:R 1:${levels.rr2.toFixed(1)}`} />
-        <Cell label="Haltezeit" value={hold} hint="15M Day-Trade" />
+        <Cell label="Haltezeit" value={hold} hint={`${timeframe} Day-Trade`} />
       </div>
 
       <Disclaimer />
