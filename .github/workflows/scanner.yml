@@ -1,0 +1,33 @@
+name: Signal Scanner
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # every 5 minutes
+  workflow_dispatch: {}     # manual trigger
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore signal cache
+        uses: actions/cache@v4
+        with:
+          path: .signal-cache.json
+          key: signals-${{ github.run_id }}
+          restore-keys: signals-
+
+      - name: Run scanner
+        env:
+          CAPITAL_ENV: ${{ secrets.CAPITAL_ENV }}
+          CAPITAL_API_KEY: ${{ secrets.CAPITAL_API_KEY }}
+          CAPITAL_IDENTIFIER: ${{ secrets.CAPITAL_IDENTIFIER }}
+          CAPITAL_API_PASSWORD: ${{ secrets.CAPITAL_API_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: node server/gh-scanner.mjs
