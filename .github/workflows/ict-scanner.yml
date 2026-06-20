@@ -1,0 +1,40 @@
+name: ICT Engine Scanner
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # every 15 minutes
+  workflow_dispatch: {}     # manual trigger
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore ICT cooldown cache
+        uses: actions/cache@v4
+        with:
+          path: .ict-cache.json
+          key: ict-${{ github.run_id }}
+          restore-keys: ict-
+
+      # The pure strategy modules have no external deps, so we can bundle the
+      # TS worker with esbuild-on-demand — no `npm ci` needed.
+      - name: Bundle ICT worker
+        run: npx --yes esbuild server/ict-worker.ts --bundle --platform=node --format=esm --outfile=ict-worker.bundle.mjs
+
+      - name: Run ICT worker
+        env:
+          CAPITAL_ENV: ${{ secrets.CAPITAL_ENV }}
+          CAPITAL_API_KEY: ${{ secrets.CAPITAL_API_KEY }}
+          CAPITAL_IDENTIFIER: ${{ secrets.CAPITAL_IDENTIFIER }}
+          CAPITAL_API_PASSWORD: ${{ secrets.CAPITAL_API_PASSWORD }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          # ICT_TIMEFRAME: "5m"   # 1m | 5m | 15m
+          # ICT_SYMBOLS: "GOLD,US100,US500,DE40,EURUSD,GBPUSD,USDJPY,BTCUSD"
+        run: node ict-worker.bundle.mjs

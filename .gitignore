@@ -13,3 +13,7 @@ server/trades.json
 
 # trading engine self-test bundle
 .trading-selftest.mjs
+
+# ICT worker build + cache artifacts
+ict-worker.bundle.mjs
+.ict-cache.json

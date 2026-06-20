@@ -97,12 +97,16 @@ export class BackgroundEngine {
 
   setOptions(opts: Partial<EngineOptions>) {
     const prevSymbol = this.opts.symbol;
+    const prevTimeframe = this.opts.timeframe;
     const prevInterval = this.opts.intervalMs;
     this.opts = { ...this.opts, ...opts };
 
-    // switching symbol = fresh watch: reset per-symbol runtime (open trades
-    // for the old symbol stay open but pause; risk/history are account-wide)
-    if (opts.symbol && opts.symbol !== prevSymbol) {
+    // switching symbol OR timeframe = fresh watch: reset per-watch runtime
+    // (open trades for the old symbol stay open but pause; risk is account-wide)
+    const watchChanged =
+      (!!opts.symbol && opts.symbol !== prevSymbol) ||
+      (!!opts.timeframe && opts.timeframe !== prevTimeframe);
+    if (watchChanged) {
       this.lastCandleTime = 0;
       this.currentSignal = null;
       this.lastSignalId = "";

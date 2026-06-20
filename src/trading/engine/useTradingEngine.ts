@@ -33,10 +33,12 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
   const [dataMode, setDataModeState] = useState<DataMode>("capital");
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [backtesting, setBacktesting] = useState(false);
-  // symbol + poll cadence survive a data-source rebuild via refs
+  // symbol + timeframe + poll cadence survive a data-source rebuild via refs
   const [symbol, setSymbolUi] = useState("GOLD");
+  const [timeframe, setTimeframeUi] = useState("5m");
   const [intervalMs, setIntervalUi] = useState(8000);
   const symbolRef = useRef("GOLD");
+  const timeframeRef = useRef("5m");
   const intervalRef = useRef(8000);
 
   // build the engine (once, and whenever the data source changes)
@@ -46,7 +48,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
       const eng = new BackgroundEngine(
         makeProvider(mode),
         risk,
-        { symbol: symbolRef.current, intervalMs: intervalRef.current },
+        { symbol: symbolRef.current, timeframe: timeframeRef.current, intervalMs: intervalRef.current },
         persisted
       );
       eng.onUpdate = (s) => {
@@ -86,6 +88,13 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     setStatus(engineRef.current?.status() ?? null);
   }, []);
 
+  const setTimeframe = useCallback((tf: string) => {
+    timeframeRef.current = tf;
+    setTimeframeUi(tf);
+    engineRef.current?.setOptions({ timeframe: tf });
+    setStatus(engineRef.current?.status() ?? null);
+  }, []);
+
   const setIntervalMs = useCallback((ms: number) => {
     intervalRef.current = ms;
     setIntervalUi(ms);
@@ -117,7 +126,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     try {
       const provider = makeProvider(dataMode);
       const sym = symbolRef.current;
-      const candles = await provider.getCandles(sym, "5m", 600);
+      const candles = await provider.getCandles(sym, timeframeRef.current, 600);
       // defer the heavy O(n²) pass so the UI thread can paint the spinner
       await new Promise((r) => setTimeout(r, 30));
       setBacktest(runBacktest(candles, sym, risk));
@@ -131,6 +140,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     closed,
     dataMode,
     symbol,
+    timeframe,
     intervalMs,
     backtest,
     backtesting,
@@ -138,6 +148,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     stop,
     setOptions,
     setSymbol,
+    setTimeframe,
     setIntervalMs,
     setDataMode,
     resetPaper,

@@ -160,6 +160,18 @@ export function TradingDashboard({ defaultNtfyTopic = "" }: { defaultNtfyTopic?:
             </select>
           </label>
           <label className="flex items-center gap-1">
+            TF
+            <select
+              value={eng.timeframe}
+              onChange={(e) => eng.setTimeframe(e.target.value)}
+              className="rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] text-foreground"
+            >
+              {["1m", "5m", "15m"].map((tf) => (
+                <option key={tf} value={tf}>{tf}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
             Takt
             <select
               value={eng.intervalMs}
