@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTradingEngine } from "@/trading/engine/useTradingEngine";
+import { WATCHLIST } from "@/lib/assets";
 import { requestNotifyPermission } from "@/trading/notifications/notify";
 import { liveTradingEnabled } from "@/trading/broker/BrokerAdapter";
 import type { EngineStatus } from "@/trading/engine/BackgroundEngine";
@@ -144,6 +145,34 @@ export function TradingDashboard({ defaultNtfyTopic = "" }: { defaultNtfyTopic?:
       </CardHeader>
 
       <CardContent className="space-y-3">
+        {/* controls: symbol + poll cadence */}
+        <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+          <label className="flex items-center gap-1">
+            Symbol
+            <select
+              value={eng.symbol}
+              onChange={(e) => eng.setSymbol(e.target.value)}
+              className="rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] text-foreground"
+            >
+              {WATCHLIST.map((a) => (
+                <option key={a.epic} value={a.epic}>{a.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            Takt
+            <select
+              value={eng.intervalMs}
+              onChange={(e) => eng.setIntervalMs(Number(e.target.value))}
+              className="rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] text-foreground"
+            >
+              {[5000, 8000, 10000, 15000, 30000].map((ms) => (
+                <option key={ms} value={ms}>{ms / 1000}s</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         {/* status strip */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border/50 bg-background/40 px-3 py-2 font-mono text-[10px]">
           <span className="flex items-center gap-1.5">

@@ -46,7 +46,7 @@ export function runBacktest(
   for (let i = 60; i < candles.length; i++) {
     const bar = candles[i];
     // step open trades with this bar first
-    const closedNow = paper.update(bar);
+    const closedNow = paper.update(bar, symbol);
     for (const ev of closedNow) {
       rm.registerResult(ev.pnl);
       equityCurve.push({ time: bar.time, equity: rm.state.equity });

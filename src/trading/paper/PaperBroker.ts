@@ -70,10 +70,16 @@ export class PaperBroker {
     return t;
   }
 
-  /** Step all open trades with a new candle. Returns trades that fully closed. */
-  update(candle: Candle): CloseEvent[] {
+  /**
+   * Step open trades with a new candle. If `symbol` is given, only trades for
+   * that symbol advance (the engine watches one symbol at a time, so trades on
+   * other symbols pause rather than being stepped with the wrong candles).
+   * Returns trades that fully closed.
+   */
+  update(candle: Candle, symbol?: string): CloseEvent[] {
     const closedNow: CloseEvent[] = [];
     for (const t of [...this.open]) {
+      if (symbol && t.symbol !== symbol) continue;
       const m = this.machine.get(t.id);
       if (!m || m.R <= 0) continue;
       const long = t.direction === "BUY";

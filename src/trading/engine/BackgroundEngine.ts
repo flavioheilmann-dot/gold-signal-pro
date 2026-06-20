@@ -96,7 +96,28 @@ export class BackgroundEngine {
   }
 
   setOptions(opts: Partial<EngineOptions>) {
+    const prevSymbol = this.opts.symbol;
+    const prevInterval = this.opts.intervalMs;
     this.opts = { ...this.opts, ...opts };
+
+    // switching symbol = fresh watch: reset per-symbol runtime (open trades
+    // for the old symbol stay open but pause; risk/history are account-wide)
+    if (opts.symbol && opts.symbol !== prevSymbol) {
+      this.lastCandleTime = 0;
+      this.currentSignal = null;
+      this.lastSignalId = "";
+      this.stage = "no_data";
+      this.stageLabel = "—";
+      this.bias = "neutral";
+      this.error = null;
+      if (this.running) this.tick();
+    }
+
+    // changing the poll cadence must re-arm the running timer
+    if (opts.intervalMs && opts.intervalMs !== prevInterval && this.running) {
+      if (this.timer) clearInterval(this.timer);
+      this.timer = setInterval(() => this.tick(), this.opts.intervalMs);
+    }
   }
 
   start() {
@@ -134,9 +155,9 @@ export class BackgroundEngine {
       this.error = null;
       const last = candles[candles.length - 1];
 
-      // step open paper trades once per new bar
+      // step open paper trades once per new bar (only this symbol's trades)
       if (last.time !== this.lastCandleTime) {
-        for (const ev of this.paper.update(last)) this.rm.registerResult(ev.pnl);
+        for (const ev of this.paper.update(last, this.opts.symbol)) this.rm.registerResult(ev.pnl);
         this.lastCandleTime = last.time;
       }
 
