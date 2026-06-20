@@ -10,3 +10,6 @@ server/.env
 *.log
 ngrok.exe
 server/trades.json
+
+# trading engine self-test bundle
+.trading-selftest.mjs
