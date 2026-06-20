@@ -30,7 +30,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
   const engineRef = useRef<BackgroundEngine | null>(null);
   const [status, setStatus] = useState<EngineStatus | null>(null);
   const [closed, setClosed] = useState<PaperTrade[]>([]);
-  const [dataMode, setDataModeState] = useState<DataMode>("mock");
+  const [dataMode, setDataModeState] = useState<DataMode>("capital");
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [backtesting, setBacktesting] = useState(false);
 
@@ -57,7 +57,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
   );
 
   useEffect(() => {
-    const eng = build("mock");
+    const eng = build("capital");
     return () => eng.stop();
   }, [build]);
 

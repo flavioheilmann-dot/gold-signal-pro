@@ -31,7 +31,7 @@ export interface EngineOptions {
 export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   symbol: "GOLD",
   timeframe: "5m",
-  candleLimit: 300,
+  candleLimit: 500, // ~2 days of 5m candles → prev-day & session levels
   intervalMs: 8000,
   autoPaper: true,
   notify: { browser: false, ntfy: false, ntfyTopic: "" },
@@ -123,9 +123,12 @@ export class BackgroundEngine {
       this.lastCheck = Date.now();
       this.candleCount = candles.length;
       if (candles.length < 60) {
-        this.error = "Zu wenig Daten";
+        this.error =
+          this.provider.mode === "live"
+            ? `Keine Live-Daten von ${this.provider.name} (Backend offline? Auf Sim-Daten umschalten)`
+            : "Zu wenig Daten";
         this.stage = "no_data";
-        this.stageLabel = "Zu wenig Daten";
+        this.stageLabel = candles.length === 0 ? "Keine Daten" : "Zu wenig Daten";
         return this.emit();
       }
       this.error = null;
