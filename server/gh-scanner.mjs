@@ -1,6 +1,19 @@
 // GitHub Actions scanner — runs once, scans all assets, pushes strong signals.
 // Uses .signal-cache.json to avoid re-pushing the same signal within 30 min.
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { evaluateOpen, newSignal, hasConfluence, summarize, trimLog } from "./signal-journal.mjs";
+import { tradingGate, isStale } from "./market-filter.mjs";
+
+// Load server/.env for LOCAL runs (gitignored). In CI the vars come from
+// the workflow `env:` (GitHub Secrets) and this file does not exist.
+(function loadLocalEnv() {
+  const path = existsSync("server/.env") ? "server/.env" : existsSync(".env") ? ".env" : null;
+  if (!path) return;
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+})();
 
 const ENVN = (process.env.CAPITAL_ENV || "demo").toLowerCase();
 const BASE = ENVN === "live"
@@ -230,25 +243,44 @@ function toAscii(s) {
   return s.replace(/[äÄ]/g, "ae").replace(/[öÖ]/g, "oe").replace(/[üÜ]/g, "ue").replace(/[^\x20-\x7E]/g, "");
 }
 
+// ── Track record (own = box, read-only other = ict) ──
+const TRACK_FILE = "track-box.json";
+const OTHER_TRACK = "track-ict.json";
+const TF_SECONDS = 15 * 60;
+function loadJson(path, fallback) { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return fallback; } }
+
+/** Fetch + map recent candles for an epic (shared by scan + journal eval). */
+async function fetchCandles(epic) {
+  const d = await cap(`/api/v1/prices/${encodeURIComponent(epic)}?resolution=MINUTE_15&max=300`);
+  return (d.prices || [])
+    .map((p) => ({
+      time: Math.floor(Date.parse(p.snapshotTimeUTC || p.snapshotTime) / 1000),
+      open: mid(p.openPrice), high: mid(p.highPrice), low: mid(p.lowPrice), close: mid(p.closePrice),
+    }))
+    .filter((c) => Number.isFinite(c.close));
+}
+
 // ── Main ──
 async function main() {
   console.log(`[scanner] ${new Date().toISOString()} — scanning ${WATCHLIST.length} assets (${ENVN})`);
   await login();
   let found = 0;
 
+  // load track record, update outcomes of still-open signals
+  const track = loadJson(TRACK_FILE, []);
+  const otherTrack = existsSync(OTHER_TRACK) ? loadJson(OTHER_TRACK, []) : [];
+  await evaluateOpen(track, fetchCandles);
+  const gate = tradingGate();
+  if (!gate.ok) console.log(`[scanner] push-gate zu: ${gate.reason} (Signale werden ausgewertet, aber nicht gepusht)`);
+
   for (const asset of WATCHLIST) {
     try {
-      const d = await cap(`/api/v1/prices/${encodeURIComponent(asset.epic)}?resolution=MINUTE_15&max=300`);
-      const raw = d.prices || [];
-      if (raw.length < 90) continue;
-
-      const candles = raw.map(p => ({
-        time: Math.floor(Date.parse(p.snapshotTimeUTC || p.snapshotTime) / 1000),
-        open: mid(p.openPrice), high: mid(p.highPrice),
-        low: mid(p.lowPrice), close: mid(p.closePrice),
-      })).filter(c => Number.isFinite(c.close));
-
+      const candles = await fetchCandles(asset.epic);
       if (candles.length < 90) continue;
+      if (isStale(candles[candles.length - 1].time, TF_SECONDS)) {
+        console.log(`  · ${asset.name}: Markt zu / Daten veraltet`);
+        continue;
+      }
       const { decision, atrLast } = analyze(candles);
 
       if (decision.state === "STRONG_BUY" || decision.state === "STRONG_SELL") {
@@ -256,6 +288,10 @@ async function main() {
         if (wasPushed(asset.epic, decision.state)) {
           console.log(`  ⏭ ${asset.name}: ${decision.state} (already pushed)`);
           continue;
+        }
+        if (!gate.ok) {
+          console.log(`  ⏸ ${asset.name}: ${decision.state} — kein Push (${gate.reason})`);
+          continue; // don't mark: re-push once the session opens
         }
         markPushed(asset.epic, decision.state);
 
@@ -265,9 +301,11 @@ async function main() {
         const sl = atrLast ? (long ? price - P.atrSL * atrLast : price + P.atrSL * atrLast) : null;
         const tp1 = atrLast ? (long ? price + P.atrTP1 * atrLast : price - P.atrTP1 * atrLast) : null;
         const tp2 = atrLast ? (long ? price + P.atrTP2 * atrLast : price - P.atrTP2 * atrLast) : null;
+        const conf = hasConfluence(asset.epic, dir, otherTrack);
 
         const lines = [
           `STARKES SIGNAL · ${decision.confidence}% Konfidenz`,
+          ...(conf ? ["KONFLUENZ: ICT zeigt dieselbe Richtung"] : []),
           `Entry: ${price.toFixed(2)}`,
           ...(sl != null ? [`SL: ${sl.toFixed(2)}`, `TP1: ${tp1.toFixed(2)}`, `TP2: ${tp2.toFixed(2)}`] : []),
           `Grund: ${decision.reason}`,
@@ -276,12 +314,19 @@ async function main() {
         ];
 
         const tag = long ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
+        const title = conf ? `Box+ICT: ${asset.name} ${dir}` : `Box: ${asset.name} ${dir}`;
         await fetch(`https://ntfy.sh/${encodeURIComponent(NTFY_TOPIC)}`, {
           method: "POST",
-          headers: { Title: toAscii(`Box: ${asset.name} ${dir}`), Tags: `${tag},rotating_light`, Priority: "high" },
+          headers: { Title: toAscii(title), Tags: conf ? `${tag},rotating_light,star` : `${tag},rotating_light`, Priority: "high" },
           body: toAscii(lines.join("\n")),
         });
-        console.log(`  🔴 PUSH: ${asset.name} ${dir} (${decision.confidence}%)`);
+        console.log(`  🔴 PUSH: ${asset.name} ${dir} (${decision.confidence}%)${conf ? " +KONFLUENZ" : ""}`);
+
+        if (sl != null) {
+          const rec = newSignal({ strategy: "Box", epic: asset.epic, name: asset.name, dir, entry: price, sl, tp1, tp2, confidence: decision.confidence, time: candles[candles.length - 1].time });
+          rec.confluence = conf;
+          track.push(rec);
+        }
       }
     } catch (e) {
       // skip (market closed, unknown epic, etc.)
@@ -289,7 +334,9 @@ async function main() {
   }
 
   saveCache();
-  console.log(`[scanner] done — ${found} strong signal(s)`);
+  writeFileSync(TRACK_FILE, JSON.stringify(trimLog(track)), "utf8");
+  const sum = summarize(track);
+  console.log(`[scanner] done — ${found} strong, track: ${sum.closed} closed (${sum.wins}W/${sum.losses}L, ${sum.sumR}R), ${sum.open} open`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

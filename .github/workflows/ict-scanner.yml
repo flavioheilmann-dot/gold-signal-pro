@@ -3,7 +3,16 @@ name: ICT Engine Scanner
 on:
   schedule:
     - cron: '*/15 * * * *'  # every 15 minutes
-  workflow_dispatch: {}     # manual trigger
+  workflow_dispatch:
+    inputs:
+      timeframe:
+        description: "Timeframe (1m | 5m | 15m)"
+        required: false
+        default: "5m"
+      symbols:
+        description: "Comma-separated epics"
+        required: false
+        default: "GOLD,US100,US500,DE40,EURUSD,GBPUSD,USDJPY,BTCUSD"
 
 jobs:
   scan:
@@ -16,12 +25,26 @@ jobs:
         with:
           node-version: 20
 
-      - name: Restore ICT cooldown cache
+      - name: Cooldown cache
         uses: actions/cache@v4
         with:
           path: .ict-cache.json
-          key: ict-${{ github.run_id }}
-          restore-keys: ict-
+          key: ict-cool-${{ github.run_id }}
+          restore-keys: ict-cool-
+
+      - name: Track-record cache (ICT)
+        uses: actions/cache@v4
+        with:
+          path: track-ict.json
+          key: ict-track-${{ github.run_id }}
+          restore-keys: ict-track-
+
+      - name: Read Box track (read-only, for confluence)
+        uses: actions/cache/restore@v4
+        with:
+          path: track-box.json
+          key: ict-read-${{ github.run_id }}
+          restore-keys: box-track-
 
       # The pure strategy modules have no external deps, so we can bundle the
       # TS worker with esbuild-on-demand — no `npm ci` needed.
@@ -35,6 +58,6 @@ jobs:
           CAPITAL_IDENTIFIER: ${{ secrets.CAPITAL_IDENTIFIER }}
           CAPITAL_API_PASSWORD: ${{ secrets.CAPITAL_API_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          # ICT_TIMEFRAME: "5m"   # 1m | 5m | 15m
-          # ICT_SYMBOLS: "GOLD,US100,US500,DE40,EURUSD,GBPUSD,USDJPY,BTCUSD"
+          ICT_TIMEFRAME: ${{ github.event.inputs.timeframe || '5m' }}
+          ICT_SYMBOLS: ${{ github.event.inputs.symbols || 'GOLD,US100,US500,DE40,EURUSD,GBPUSD,USDJPY,BTCUSD' }}
         run: node ict-worker.bundle.mjs

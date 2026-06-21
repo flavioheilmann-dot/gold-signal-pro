@@ -17,3 +17,8 @@ server/trades.json
 # ICT worker build + cache artifacts
 ict-worker.bundle.mjs
 .ict-cache.json
+
+# cloud scanner root cache files (track snapshot lives in data/)
+track-box.json
+track-ict.json
+.signal-cache.json

@@ -1,0 +1,47 @@
+name: Daily Heartbeat
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Read Box track (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: track-box.json
+          key: hb-box-${{ github.run_id }}
+          restore-keys: box-track-
+
+      - name: Read ICT track (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: track-ict.json
+          key: hb-ict-${{ github.run_id }}
+          restore-keys: ict-track-
+
+      - name: Run heartbeat (push status + write snapshot)
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: node server/heartbeat.mjs
+
+      - name: Publish snapshot to repo
+        run: |
+          git config user.name "gsp-bot"
+          git config user.email "gsp-bot@users.noreply.github.com"
+          git add -f data/track-record.json
+          git commit -m "chore: track-record snapshot" || { echo "no change"; exit 0; }
+          git pull --rebase origin master
+          git push origin HEAD:master

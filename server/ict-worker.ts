@@ -14,6 +14,9 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { analyze } from "../src/trading/strategy/StrategyEngine";
 import { MIN_SIGNAL_SCORE } from "../src/trading/strategy/confidence";
 import { DEFAULT_RISK, type Candle, type MarketContext } from "../src/trading/types";
+// shared cloud-scanner utilities (plain ESM, bundled by esbuild)
+import { evaluateOpen, newSignal, hasConfluence, summarize, trimLog } from "./signal-journal.mjs";
+import { tradingGate, isStale, tfSeconds } from "./market-filter.mjs";
 
 // Load server/.env for LOCAL runs (gitignored). In CI the vars come from
 // the workflow `env:` (GitHub Secrets) and this file does not exist.
@@ -91,21 +94,36 @@ function saveCache() {
   writeFileSync(CACHE_FILE, JSON.stringify(cache), "utf8");
 }
 
+// ── Track record (own = ict, read-only other = box) ──
+const TRACK_FILE = "track-ict.json";
+const OTHER_TRACK = "track-box.json";
+const loadJson = (p: string, fb: any) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return fb; } };
+
+async function fetchCandles(epic: string): Promise<Candle[]> {
+  const d = await cap(`/api/v1/prices/${encodeURIComponent(epic)}?resolution=${RESOLUTION}&max=500`);
+  return (d.prices || [])
+    .map((p: any) => ({
+      time: Math.floor(Date.parse(p.snapshotTimeUTC || p.snapshotTime) / 1000),
+      open: mid(p.openPrice), high: mid(p.highPrice), low: mid(p.lowPrice), close: mid(p.closePrice),
+    }))
+    .filter((c: Candle) => Number.isFinite(c.close));
+}
+
 async function main() {
   console.log(`[ict-worker] env=${ENVN} tf=${TF} symbols=${SYMBOLS.join(",")}${DRY_RUN ? " (DRY RUN)" : ""}`);
   let found = 0, pushed = 0;
 
+  const track = loadJson(TRACK_FILE, []) as any[];
+  const otherTrack = (existsSync(OTHER_TRACK) ? loadJson(OTHER_TRACK, []) : []) as any[];
+  await evaluateOpen(track, fetchCandles);
+  const gate = tradingGate();
+  if (!gate.ok) console.log(`[ict-worker] push-gate zu: ${gate.reason}`);
+
   for (const epic of SYMBOLS) {
     try {
-      const d = await cap(`/api/v1/prices/${encodeURIComponent(epic)}?resolution=${RESOLUTION}&max=500`);
-      const raw = d.prices || [];
-      const candles: Candle[] = raw
-        .map((p: any) => ({
-          time: Math.floor(Date.parse(p.snapshotTimeUTC || p.snapshotTime) / 1000),
-          open: mid(p.openPrice), high: mid(p.highPrice), low: mid(p.lowPrice), close: mid(p.closePrice),
-        }))
-        .filter((c: Candle) => Number.isFinite(c.close));
+      const candles: Candle[] = await fetchCandles(epic);
       if (candles.length < 80) { console.log(`  · ${epic}: zu wenig Daten (${candles.length})`); continue; }
+      if (isStale(candles[candles.length - 1].time, tfSeconds(TF))) { console.log(`  · ${epic}: Markt zu / Daten veraltet`); continue; }
 
       const ctx: MarketContext = { symbol: epic, spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false };
       const res = analyze(candles, ctx, DEFAULT_RISK);
@@ -121,12 +139,16 @@ async function main() {
       const sig = res.signal;
       const key = `${epic}:${sig.direction}`;
       if (wasPushed(key)) { console.log(`  ⏭ ${epic}: ${sig.direction} (cooldown)`); continue; }
+      if (!gate.ok) { console.log(`  ⏸ ${epic}: ${sig.direction} — kein Push (${gate.reason})`); continue; }
 
       const long = sig.direction === "BUY";
+      const ndir = long ? "LONG" : "SHORT"; // normalised for cross-strategy confluence
+      const conf = hasConfluence(epic, ndir, otherTrack);
       const stageNote = res.stage === "ready" ? "Preis in FVG-Zone" : "Retrace abwarten";
-      const title = `ICT: ${epic} ${sig.direction}`;
+      const title = conf ? `ICT+Box: ${epic} ${sig.direction}` : `ICT: ${epic} ${sig.direction}`;
       const lines = [
         `${sig.confidence}/100 · RR 1:${sig.riskReward} · ${stageNote}`,
+        ...(conf ? ["KONFLUENZ: Box zeigt dieselbe Richtung"] : []),
         `Entry-Zone: ${sig.entryZone.from.toFixed(2)}–${sig.entryZone.to.toFixed(2)} (≈${sig.entry})`,
         `SL: ${sig.stopLoss}  TP1: ${sig.takeProfit1}  TP2: ${sig.takeProfit2}`,
         `Grund: ${sig.reasons.join(", ")}`,
@@ -141,20 +163,25 @@ async function main() {
         const tag = long ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
         await fetch(`https://ntfy.sh/${encodeURIComponent(NTFY_TOPIC)}`, {
           method: "POST",
-          headers: { Title: toAscii(title), Tags: `${tag},dart`, Priority: "high" },
+          headers: { Title: toAscii(title), Tags: conf ? `${tag},dart,star` : `${tag},dart`, Priority: "high" },
           body: toAscii(lines.join("\n")),
         });
-        console.log(`  🔔 PUSH ${epic} ${sig.direction} ${sig.confidence}/100`);
+        console.log(`  🔔 PUSH ${epic} ${sig.direction} ${sig.confidence}/100${conf ? " +KONFLUENZ" : ""}`);
       }
       markPushed(key);
       pushed++;
+      const rec = newSignal({ strategy: "ICT", epic, name: epic, dir: ndir, entry: sig.entry, sl: sig.stopLoss, tp1: sig.takeProfit1, tp2: sig.takeProfit2, confidence: sig.confidence, time: candles[candles.length - 1].time });
+      rec.confluence = conf;
+      track.push(rec);
     } catch (e) {
       console.log(`  ! ${epic}: ${(e as Error).message}`);
     }
   }
 
   if (!DRY_RUN) saveCache();
-  console.log(`[ict-worker] done — ${found} setup(s), ${pushed} push(es)`);
+  writeFileSync(TRACK_FILE, JSON.stringify(trimLog(track)), "utf8");
+  const sum = summarize(track);
+  console.log(`[ict-worker] done — ${found} setup(s), ${pushed} push(es); track: ${sum.closed} closed (${sum.wins}W/${sum.losses}L, ${sum.sumR}R), ${sum.open} open`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

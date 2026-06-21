@@ -24,6 +24,7 @@ import { EdgeDetection } from "@/components/EdgeDetection";
 import { OvernightDrift } from "@/components/OvernightDrift";
 import { TradingJournal } from "@/components/TradingJournal";
 import { TradingDashboard } from "@/components/trading/TradingDashboard";
+import { TrackRecord } from "@/components/trading/TrackRecord";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { fmtDateTime } from "@/lib/utils";
@@ -528,6 +529,8 @@ export default function App() {
         {/* sidebar */}
         <aside className="flex flex-col gap-4">
           <TradingDashboard defaultNtfyTopic={settings.ntfyTopic} />
+
+          <TrackRecord />
 
           <Card>
             <CardHeader>

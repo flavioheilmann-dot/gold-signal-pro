@@ -16,12 +16,26 @@ jobs:
         with:
           node-version: 20
 
-      - name: Restore signal cache
+      - name: Cooldown cache
         uses: actions/cache@v4
         with:
           path: .signal-cache.json
-          key: signals-${{ github.run_id }}
-          restore-keys: signals-
+          key: box-cool-${{ github.run_id }}
+          restore-keys: box-cool-
+
+      - name: Track-record cache (Box)
+        uses: actions/cache@v4
+        with:
+          path: track-box.json
+          key: box-track-${{ github.run_id }}
+          restore-keys: box-track-
+
+      - name: Read ICT track (read-only, for confluence)
+        uses: actions/cache/restore@v4
+        with:
+          path: track-ict.json
+          key: box-read-${{ github.run_id }}
+          restore-keys: ict-track-
 
       - name: Run scanner
         env:
