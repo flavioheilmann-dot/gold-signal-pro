@@ -49,22 +49,24 @@ const SYMBOLS = (process.env.ICT_SYMBOLS || "GOLD,US100,US500,DE40,EURUSD,GBPUSD
 if (!API_KEY || !IDENT || !PASS) { console.error("Missing Capital.com credentials"); process.exit(1); }
 if (!NTFY_TOPIC && !DRY_RUN) { console.error("Missing NTFY_TOPIC"); process.exit(1); }
 
-// ── Capital.com session ──
+// ── Capital.com session ── (reused across loop runs)
 let session = { cst: "", token: "" };
+let authBlocked = false; // stop hammering Capital after an auth rejection
 async function login() {
   const res = await fetch(`${BASE}/api/v1/session`, {
     method: "POST",
     headers: { "X-CAP-API-KEY": API_KEY, "Content-Type": "application/json" },
     body: JSON.stringify({ identifier: IDENT, password: PASS }),
   });
-  if (!res.ok) throw new Error(`auth_failed ${res.status}`);
+  if (!res.ok) { authBlocked = true; throw new Error(`auth_failed ${res.status}`); }
   session = { cst: res.headers.get("CST") || "", token: res.headers.get("X-SECURITY-TOKEN") || "" };
 }
 async function cap(path: string): Promise<any> {
+  if (authBlocked) throw new Error("auth_blocked");
   if (!session.cst) await login();
   const doFetch = () => fetch(`${BASE}${path}`, { headers: { CST: session.cst, "X-SECURITY-TOKEN": session.token } });
   let res = await doFetch();
-  if (res.status === 401) { await login(); res = await doFetch(); }
+  if (res.status === 401) { session.cst = ""; await login(); res = await doFetch(); }
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
@@ -111,6 +113,13 @@ async function fetchCandles(epic: string): Promise<Candle[]> {
 
 export async function runScan() {
   console.log(`[ict-worker] env=${ENVN} tf=${TF} symbols=${SYMBOLS.join(",")}${DRY_RUN ? " (DRY RUN)" : ""}`);
+  authBlocked = false; // give auth one fresh chance per run
+  try {
+    if (!session.cst) await login();
+  } catch (e) {
+    console.error(`[ict-worker] LOGIN FEHLGESCHLAGEN: ${(e as Error).message} — Capital-Zugangsdaten (Env-Variablen) pruefen`);
+    return;
+  }
   let found = 0, pushed = 0;
 
   const track = loadJson(TRACK_FILE, []) as any[];
