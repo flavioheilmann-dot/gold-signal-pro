@@ -109,7 +109,7 @@ async function fetchCandles(epic: string): Promise<Candle[]> {
     .filter((c: Candle) => Number.isFinite(c.close));
 }
 
-async function main() {
+export async function runScan() {
   console.log(`[ict-worker] env=${ENVN} tf=${TF} symbols=${SYMBOLS.join(",")}${DRY_RUN ? " (DRY RUN)" : ""}`);
   let found = 0, pushed = 0;
 
@@ -184,4 +184,6 @@ async function main() {
   console.log(`[ict-worker] done — ${found} setup(s), ${pushed} push(es); track: ${sum.closed} closed (${sum.wins}W/${sum.losses}L, ${sum.sumR}R), ${sum.open} open`);
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+// Auto-run when executed directly (GitHub Actions). The always-on worker sets
+// ICT_LIB=1 and imports runScan instead, so this guard skips the auto-run.
+if (process.env.ICT_LIB !== "1") runScan().catch((e) => { console.error(e); process.exit(1); });

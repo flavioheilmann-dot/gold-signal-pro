@@ -1,13 +1,21 @@
+# Render Blueprint — always-on signal worker (free web service).
+# Deploy: Render dashboard → New → Blueprint → connect this repo.
+# Then set the 5 secret env vars (CAPITAL_* + NTFY_TOPIC) in the dashboard.
+# Free web services sleep after ~15 min idle, so add a free uptime pinger
+# (e.g. cron-job.org / UptimeRobot) hitting the service URL every ~10 min.
 services:
   - type: web
-    name: gold-signal-scanner
+    name: gold-signal-worker
     runtime: node
     plan: free
-    buildCommand: npm install --production
-    startCommand: node server/cloud-scanner.mjs
+    autoDeploy: true
+    buildCommand: npx --yes esbuild server/ict-worker.ts --bundle --platform=node --format=esm --outfile=server/ict-worker.bundle.mjs
+    startCommand: node server/always-on.mjs
     envVars:
+      - key: NODE_VERSION
+        value: 20
       - key: CAPITAL_ENV
-        sync: false
+        sync: false          # set in dashboard (e.g. "live")
       - key: CAPITAL_API_KEY
         sync: false
       - key: CAPITAL_IDENTIFIER
@@ -16,5 +24,8 @@ services:
         sync: false
       - key: NTFY_TOPIC
         sync: false
-      - key: NODE_VERSION
-        value: 20
+      # optional cadence overrides:
+      # - key: BOX_INTERVAL_SEC
+      #   value: "120"
+      # - key: ICT_INTERVAL_SEC
+      #   value: "180"
