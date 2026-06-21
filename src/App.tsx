@@ -279,7 +279,7 @@ export default function App() {
         "Kein Finanzrat – zuerst selbst prüfen.",
       ];
       const tag = strong.decision.state === "STRONG_BUY" ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
-      pushNtfy(settings.ntfyTopic, `🔔 ${strong.asset.name}: ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
+      pushNtfy(settings.ntfyTopic, `Box: ${strong.asset.name} ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
     }
   }, [scan, connected, settings.alarmOn, settings.ntfyTopic]);
 

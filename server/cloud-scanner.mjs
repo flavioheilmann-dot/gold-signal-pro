@@ -316,7 +316,7 @@ async function scan() {
         ];
 
         const tag = long ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
-        await pushNtfy(`🔴 ${asset.name}: ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
+        await pushNtfy(`Box: ${asset.name} ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
       }
     } catch { /* skip */ }
   }

@@ -271,14 +271,14 @@ async function main() {
           `Entry: ${price.toFixed(2)}`,
           ...(sl != null ? [`SL: ${sl.toFixed(2)}`, `TP1: ${tp1.toFixed(2)}`, `TP2: ${tp2.toFixed(2)}`] : []),
           `Grund: ${decision.reason}`,
-          `Quelle: Capital.com · 15M`,
+          `Quelle: Capital.com · 15M · Box/EMA`,
           `Kein Finanzrat - zuerst selbst pruefen.`,
         ];
 
         const tag = long ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
         await fetch(`https://ntfy.sh/${encodeURIComponent(NTFY_TOPIC)}`, {
           method: "POST",
-          headers: { Title: toAscii(`🔴 ${asset.name}: ${dir}`), Tags: `${tag},rotating_light`, Priority: "high" },
+          headers: { Title: toAscii(`Box: ${asset.name} ${dir}`), Tags: `${tag},rotating_light`, Priority: "high" },
           body: toAscii(lines.join("\n")),
         });
         console.log(`  🔴 PUSH: ${asset.name} ${dir} (${decision.confidence}%)`);

@@ -317,7 +317,7 @@ export function startScanner(capFn, ntfyTopic) {
           ];
 
           const tag = decision.bias === "long" ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
-          await pushNtfy(ntfyTopic, `🔴 ${asset.name}: ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
+          await pushNtfy(ntfyTopic, `Box: ${asset.name} ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
         }
       } catch {
         // skip assets that error (market closed, unknown epic, etc.)

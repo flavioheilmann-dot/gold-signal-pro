@@ -124,7 +124,7 @@ async function main() {
 
       const long = sig.direction === "BUY";
       const stageNote = res.stage === "ready" ? "Preis in FVG-Zone" : "Retrace abwarten";
-      const title = `${long ? "🟢 LONG" : "🔴 SHORT"} ${epic} · ICT-Setup`;
+      const title = `ICT: ${epic} ${sig.direction}`;
       const lines = [
         `${sig.confidence}/100 · RR 1:${sig.riskReward} · ${stageNote}`,
         `Entry-Zone: ${sig.entryZone.from.toFixed(2)}–${sig.entryZone.to.toFixed(2)} (≈${sig.entry})`,
