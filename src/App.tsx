@@ -497,16 +497,17 @@ export default function App() {
                 <LineChart className="h-3.5 w-3.5" /> {active?.name ?? "—"} · {timeframe} {connected ? "Day-Chart" : "Proxy-Chart"}
               </CardTitle>
               <div className="hidden items-center gap-3 font-mono text-[10px] text-muted-foreground sm:flex">
-                <span className="text-gold">Preis</span>
                 <span className="text-info">EMA21</span>
                 <span className="text-gold">Box</span>
-                <span>▲▼ Signale</span>
+                <span className="text-up">FVG</span>
+                <span className="text-gold">Sweep</span>
+                <span>Entry/SL/TP</span>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="relative h-[300px] w-full sm:h-[340px]">
+              <div className="relative h-[440px] w-full sm:h-[600px]">
                 {active ? (
-                  <ChartPanel series={active.series} events={active.events} theme={theme} livePrice={livePrice} />
+                  <ChartPanel series={active.series} events={active.events} theme={theme} livePrice={livePrice} levels={levels} />
                 ) : (
                   <div className="skeleton h-full w-full" />
                 )}

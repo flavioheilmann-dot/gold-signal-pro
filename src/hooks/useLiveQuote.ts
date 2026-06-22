@@ -6,7 +6,7 @@ import { getQuote, type Quote } from "@/lib/capital";
  * `intervalMs` while enabled and the tab is visible. Drives the live header
  * price and the forming candle so the chart feels second-accurate.
  */
-export function useLiveQuote(epic: string | undefined, enabled: boolean, intervalMs = 2500) {
+export function useLiveQuote(epic: string | undefined, enabled: boolean, intervalMs = 1500) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const epicRef = useRef(epic);
   epicRef.current = epic;
