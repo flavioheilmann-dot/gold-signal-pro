@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1782056609095,
+  "updatedAt": 1782154764460,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,18 +9,47 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1782056609095
+    "updatedAt": 1782154764460
   },
   "ict": {
-    "total": 0,
-    "open": 0,
+    "total": 1,
+    "open": 1,
     "closed": 0,
     "wins": 0,
     "losses": 0,
     "winRate": 0,
     "sumR": 0,
-    "byStrategy": {},
-    "updatedAt": 1782056609095
+    "byStrategy": {
+      "ICT": {
+        "total": 1,
+        "open": 1,
+        "wins": 0,
+        "losses": 0,
+        "sumR": 0,
+        "winRate": 0,
+        "avgR": 0
+      }
+    },
+    "updatedAt": 1782154764460
   },
-  "recent": []
+  "recent": [
+    {
+      "id": "ICT:EURUSD:1782144900",
+      "strategy": "ICT",
+      "epic": "EURUSD",
+      "name": "EURUSD",
+      "dir": "SHORT",
+      "entry": 1.14,
+      "sl": 1.14,
+      "tp1": 1.14,
+      "tp2": 1.14,
+      "confidence": 75,
+      "openedAt": 1782144900,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    }
+  ]
 }
