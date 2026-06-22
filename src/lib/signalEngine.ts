@@ -28,6 +28,8 @@ export interface StrategyParams {
   boxLookback: number;
   breakoutBufferAtr: number;
   rejectionWickMin: number;
+  /** How many bars a confirmed signal is held before reverting to WAIT. */
+  holdBars?: number;
 }
 
 export const DEFAULT_STRATEGY: StrategyParams = {
@@ -42,12 +44,13 @@ export const DEFAULT_STRATEGY: StrategyParams = {
   // ── striktes "weniger, dafür hochwertiger" Day-Trading-Tuning ──
   strengthMin: 0.65, // höhere Trendstärke-Hürde → kein Handel in flachen Phasen
   confirmBars: 2,
-  atrSL: 1.0, // etwas mehr Stop-Luft → weniger Premature-Stops
-  atrTP1: 1.6,
-  atrTP2: 2.6,
+  atrSL: 1.5, // breiterer Stop → nicht von einer einzelnen Kerze ausgestoppt
+  atrTP1: 2.5, // R:R ~1.67 zu TP1
+  atrTP2: 4.0, // R:R ~2.67 zu TP2
   boxLookback: 30, // längere Konsolidierung → bedeutsamerer Ausbruch
-  breakoutBufferAtr: 0.18, // Preis muss die Box deutlicher überwinden (kein Fake-Breakout)
+  breakoutBufferAtr: 0.22, // Preis muss die Box klar überwinden (kein Fake-Breakout)
   rejectionWickMin: 0.55, // nur klare Rejections zählen
+  holdBars: 4, // bestätigtes Signal ~4 Bars halten → kein Flip-Flop
 };
 
 export function ema(data: number[], period: number): (number | null)[] {
@@ -471,6 +474,8 @@ export interface SignalEvent {
   price: number;
   state: SignalState;
   confidence: number;
+  reason?: string;
+  trend?: Trend;
 }
 
 export function decide(s: StrategySeries, p: StrategyParams): { current: Decision; events: SignalEvent[] } {
@@ -499,21 +504,37 @@ export function decide(s: StrategySeries, p: StrategyParams): { current: Decisio
     const side = sideOf(displayed);
 
     if (side !== "flat" && side !== lastActionSide) {
-      events.push({ index: i, time: s.times[i], price: s.prices[i], state: displayed, confidence: raw.confidence });
+      events.push({ index: i, time: s.times[i], price: s.prices[i], state: displayed, confidence: raw.confidence, reason: raw.reason, trend: raw.trend });
       lastActionSide = side;
     }
+  }
 
-    if (i === n - 1) {
-      current = confirmed
-        ? { state: displayed, bias: side, confidence: raw.confidence, trend: raw.trend, reason: raw.reason }
-        : {
-            state: "WAIT",
-            bias: "flat",
-            confidence: raw.confidence,
-            trend: raw.trend,
-            reason: raw.bias === "flat" ? raw.reason : `${raw.reason} (${pendingCount}/${p.confirmBars} bestaetigt)`,
-          };
-    }
+  // ── Displayed decision: derived ONLY from CLOSED bars (ignore the still-
+  //    forming last candle so it can't flip the signal intra-candle) and
+  //    HELD for `holdBars` after it fires → no "gut → 20% in 30s" flip-flop.
+  const holdBars = p.holdBars ?? 4;
+  const lastClosed = n - 2; // last completed candle (n-1 is forming)
+  const lastEv = [...events].reverse().find((e) => e.index <= lastClosed);
+
+  if (lastEv && lastClosed - lastEv.index <= holdBars) {
+    const side = sideOf(lastEv.state);
+    const fresh = rawBiasAt(s, lastEv.index, p);
+    current = {
+      state: lastEv.state,
+      bias: side,
+      confidence: lastEv.confidence,
+      trend: lastEv.trend ?? fresh.trend,
+      reason: lastEv.reason ?? fresh.reason,
+    };
+  } else {
+    const rawClosed = rawBiasAt(s, Math.max(start, lastClosed), p);
+    current = {
+      state: "WAIT",
+      bias: "flat",
+      confidence: 0,
+      trend: rawClosed.trend,
+      reason: rawClosed.bias === "flat" ? rawClosed.reason : "Setup noch nicht bestätigt",
+    };
   }
 
   return { current, events };

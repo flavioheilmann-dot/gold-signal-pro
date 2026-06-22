@@ -26,7 +26,7 @@ export interface HistoryEntry {
 }
 
 export const LS_KEYS = {
-  settings: "gsp_settings_day_v2",
+  settings: "gsp_settings_day_v3",
   history: "gsp_history_v2",
   theme: "gsp_theme",
 } as const;

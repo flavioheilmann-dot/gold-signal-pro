@@ -100,8 +100,8 @@ const P = {
   emaFast: 9, emaSlow: 21, emaTrend: 50,
   rsiPeriod: 14, macdFast: 12, macdSlow: 26, macdSignal: 9,
   atrPeriod: 14, strengthMin: 0.65, confirmBars: 2,
-  atrSL: 1.0, atrTP1: 1.6, atrTP2: 2.6,
-  boxLookback: 30, breakoutBufferAtr: 0.18, rejectionWickMin: 0.55,
+  atrSL: 1.5, atrTP1: 2.5, atrTP2: 4.0,
+  boxLookback: 30, breakoutBufferAtr: 0.22, rejectionWickMin: 0.55,
 };
 
 function ema(data, period) {
