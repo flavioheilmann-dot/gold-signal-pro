@@ -3,9 +3,26 @@ import { Trophy, RefreshCw, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, fmtDateTime } from "@/lib/utils";
 
-// Published once/day by the heartbeat workflow; served via jsDelivr (CORS-ok).
-const SNAPSHOT_URL =
-  "https://cdn.jsdelivr.net/gh/flavioheilmann-dot/gold-signal-pro@master/data/track-record.json";
+// Primary: the always-on worker serves a LIVE 24/7 track-record at /track.
+// Fallback: the daily snapshot the heartbeat commits (served via jsDelivr).
+const WORKER_URL = (import.meta.env.VITE_WORKER_URL || "https://gold-signal-pro.onrender.com").replace(/\/$/, "");
+const SNAPSHOT_URL = "https://cdn.jsdelivr.net/gh/flavioheilmann-dot/gold-signal-pro@master/data/track-record.json";
+
+async function fetchTrackRecord(): Promise<Snapshot> {
+  const sources = [`${WORKER_URL}/track`, `${SNAPSHOT_URL}?t=${Math.floor(Date.now() / 3.6e6)}`];
+  for (const url of sources) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 7000); // worker may cold-start
+      const r = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (r.ok) return (await r.json()) as Snapshot;
+    } catch {
+      /* try next source */
+    }
+  }
+  throw new Error("no track-record source reachable");
+}
 
 interface StratSummary {
   total: number; open: number; closed: number; wins: number; losses: number;
@@ -50,9 +67,8 @@ export function TrackRecord() {
 
   const load = () => {
     setState("loading");
-    fetch(`${SNAPSHOT_URL}?t=${Math.floor(Date.now() / 3.6e6)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d: Snapshot) => {
+    fetchTrackRecord()
+      .then((d) => {
         setSnap(d);
         setState(d && (d.box.total + d.ict.total > 0) ? "ready" : "empty");
       })

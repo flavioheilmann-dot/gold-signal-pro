@@ -13,9 +13,19 @@
 // never hard-coded. For analysis/paper only; never places orders.
 // ─────────────────────────────────────────────────────────────
 import http from "node:http";
+import { readFileSync, existsSync } from "node:fs";
+import { summarize } from "./signal-journal.mjs";
 
 process.env.BOX_LIB = "1";
 process.env.ICT_LIB = "1";
+
+const loadTrack = (p) => { try { return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : []; } catch { return []; } };
+function trackSnapshot() {
+  const box = loadTrack("track-box.json");
+  const ict = loadTrack("track-ict.json");
+  const recent = [...box, ...ict].sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0)).slice(0, 25);
+  return { updatedAt: Date.now(), box: summarize(box), ict: summarize(ict), recent };
+}
 
 const PORT = Number(process.env.PORT || 3000);
 const BOX_EVERY = Number(process.env.BOX_INTERVAL_SEC || 120) * 1000; // 2 min
@@ -39,9 +49,14 @@ async function loopIct() {
 }
 
 http
-  .createServer((_req, res) => {
+  .createServer((req, res) => {
     res.setHeader("content-type", "application/json");
     res.setHeader("access-control-allow-origin", "*");
+    // /track → live 24/7 track-record for the app (laptop-independent)
+    if (req.url && req.url.startsWith("/track")) {
+      res.end(JSON.stringify(trackSnapshot()));
+      return;
+    }
     res.end(JSON.stringify({
       ok: true,
       uptimeSec: Math.round((Date.now() - state.started) / 1000),
