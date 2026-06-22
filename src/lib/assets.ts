@@ -57,6 +57,16 @@ export const WATCHLIST: Asset[] = [
   { epic: "BA", name: "Boeing Co", kind: "stock", liquidity: 5 },
 ];
 
+/**
+ * TJR-Instrumente: NASDAQ (US100 = NQ) als Haupt-Trade, S&P 500 (US500 = ES)
+ * als Korrelations-/Alignment-Bestätigung. Die ICT-Strategie tradet bewusst
+ * nur diese beiden (TJR-Stil). US100 zuerst = Default.
+ */
+export const TJR_EPICS = ["US100", "US500"] as const;
+export const TJR_ASSETS: Asset[] = TJR_EPICS.map(
+  (e) => WATCHLIST.find((a) => a.epic === e)!
+);
+
 export const KIND_LABEL: Record<AssetKind, string> = {
   metal: "Metall",
   index: "Index",

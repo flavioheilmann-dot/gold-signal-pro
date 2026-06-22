@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LineChart } from "lucide-react";
 
 import { Header } from "@/components/Header";
 import type { DataMode, SourceInfo } from "@/components/DataSourceStatus";
@@ -9,9 +8,7 @@ import { PositionAlert, type PositionAlertData } from "@/components/PositionAler
 import { Watchlist } from "@/components/Watchlist";
 import { SignalCard } from "@/components/SignalCard";
 import { StrategyCheck } from "@/components/StrategyCheck";
-import { ChartPanel } from "@/components/ChartPanel";
 import { TradingSetup } from "@/components/TradingSetup";
-import { HotSetupAlert } from "@/components/HotSetupAlert";
 import { Sessions } from "@/components/Sessions";
 
 import { AccountPanel } from "@/components/AccountPanel";
@@ -58,12 +55,11 @@ import { useInterval } from "@/hooks/useInterval";
 import { useBroker } from "@/hooks/useBroker";
 import { useScanner } from "@/hooks/useScanner";
 import { useLiveQuote } from "@/hooks/useLiveQuote";
-import { beep, ensureNotificationPermission, notify, pushNtfy } from "@/lib/alerts";
+import { beep, ensureNotificationPermission, notify } from "@/lib/alerts";
 
 const FALLBACK: Decision = { state: "WAIT", bias: "flat", confidence: 0, trend: "range", reason: "Lade Daten …" };
 const NEWS_BULL = newsBias(GOLD_NEWS).bullPct;
 const NEWS_LEAN: FactorLean = NEWS_BULL >= 56 ? "bull" : NEWS_BULL <= 44 ? "bear" : "neutral";
-const HOT_MIN_CONF = 78;
 
 interface Active {
   name: string;
@@ -202,7 +198,6 @@ export default function App() {
   // near-real-time quote for the active asset → live price + forming candle
   const liveQuote = useLiveQuote(active?.epic, connected && marketStatus.open);
   const livePrice = liveQuote && active && Math.abs(liveQuote.mid - active.price) / active.price < 0.1 ? liveQuote.mid : undefined;
-  const hot = decision.bias !== "flat" && decision.confidence >= HOT_MIN_CONF && !!levels;
 
   // history = the active asset's confirmed signal events
   const histEntries = useMemo<HistoryEntry[]>(
@@ -247,72 +242,10 @@ export default function App() {
     });
   }, 1000);
 
-  // ── strong-setup detection → unmissable push ───────────
-  const alertedRef = useRef("");
-  useEffect(() => {
-    if (!connected) return;
-    const strong = scan.find((r) => r.decision.state === "STRONG_BUY" || r.decision.state === "STRONG_SELL");
-    if (!strong) return;
-    const key = `${strong.asset.epic}:${strong.decision.state}`;
-    if (key === alertedRef.current) return;
-    alertedRef.current = key;
-    setStrongAlert({
-      epic: strong.asset.epic,
-      name: strong.asset.name,
-      state: strong.decision.state,
-      confidence: strong.decision.confidence,
-    });
-    if (settings.alarmOn) {
-      const buy = strong.decision.state === "STRONG_BUY";
-      beep(buy);
-      setTimeout(() => beep(buy), 260);
-      notify(`🔔 ${strong.asset.name}: ${stateLabel(strong.decision.state)}`, `${strong.decision.confidence}% Konfidenz · jetzt prüfen`);
-    }
-    if (settings.ntfyTopic) {
-      const dir = strong.decision.state === "STRONG_BUY" ? "LONG" : "SHORT";
-      const snap = snapshotAt(strong.series, strong.series.prices.length - 1, settings.params);
-      const lvl = snap.atr ? levelsFor(strong.decision.state, strong.price, snap.atr, settings.params) : null;
-      const lines = [
-        `${dir} · ${strong.decision.confidence}% Konfidenz`,
-        `Entry: ${strong.price.toFixed(2)}`,
-        ...(lvl ? [
-          `SL: ${lvl.stopLoss.toFixed(2)}`,
-          `TP1: ${lvl.takeProfit1.toFixed(2)} (R:R 1:${lvl.rr1.toFixed(1)})`,
-          `TP2: ${lvl.takeProfit2.toFixed(2)} (R:R 1:${lvl.rr2.toFixed(1)})`,
-        ] : []),
-        "Quelle: Capital.com · 15M",
-        "Kein Finanzrat – zuerst selbst prüfen.",
-      ];
-      const tag = strong.decision.state === "STRONG_BUY" ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
-      pushNtfy(settings.ntfyTopic, `Box: ${strong.asset.name} ${dir}`, lines.join("\n"), [tag, "rotating_light"]);
-    }
-  }, [scan, connected, settings.alarmOn, settings.ntfyTopic]);
-
-  // ── overnight drift push notification ─────────────────────
-  const overnightPushedRef = useRef("");
-  useEffect(() => {
-    if (!settings.ntfyTopic || !overnightSetup || !overnightSetup.windowOpen) return;
-    if (overnightSetup.confidence < 60) return;
-    const key = `overnight:${overnightSetup.asset}:${new Date().toDateString()}`;
-    if (key === overnightPushedRef.current) return;
-    overnightPushedRef.current = key;
-    const dir = overnightSetup.direction === "long" ? "LONG" : "SHORT";
-    const lines = [
-      `${dir} · ${overnightSetup.confidence}% Konfidenz`,
-      `Entry: ${overnightSetup.entry.toFixed(2)}`,
-      `SL: ${overnightSetup.stopLoss.toFixed(2)}`,
-      `TP: ${overnightSetup.takeProfit.toFixed(2)}`,
-      "",
-      overnightSetup.reasons.join("\n"),
-      "",
-      "⏰ Einstiegsfenster: 22:00–01:00 MESZ",
-    ];
-    const tag = overnightSetup.direction === "long" ? "chart_with_upwards_trend" : "chart_with_downwards_trend";
-    pushNtfy(settings.ntfyTopic, `🌙 Overnight ${dir}: ${overnightSetup.asset}`, lines.join("\n"), ["crescent_moon", tag]);
-    if (settings.alarmOn) {
-      notify(`🌙 Overnight Drift: ${overnightSetup.asset}`, `${overnightSetup.confidence}% Konfidenz — Fenster offen`);
-    }
-  }, [overnightSetup, settings.ntfyTopic, settings.alarmOn]);
+  // Box-Strategie-Alarme bewusst DEAKTIVIERT — der User will ausschließlich
+  // ICT-Signale erhalten. Die Box-Panels bleiben als stille Referenz erhalten,
+  // lösen aber keine Banner/Beeps/ntfy-Pushes mehr aus. ICT alarmiert über die
+  // Background Engine (in-App) bzw. den ICT-Cloud-Scanner (Handy).
 
   // ── open position vs. current signal → conspicuous warning ──
   const positionConflict = useMemo<PositionAlertData | null>(() => {
@@ -478,12 +411,8 @@ export default function App() {
       <NewsBanner outlook={outlook} />
 
       <main className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        {/* primary */}
+        {/* primary — ICT ist jetzt die Hauptstrategie */}
         <div className="flex flex-col gap-4">
-          {hot && levels && <HotSetupAlert decision={decision} levels={levels} marketOpen={marketStatus.open} />}
-
-          {snap ? <SignalCard decision={decision} factors={factors} timeframe={timeframe} /> : <div className="skeleton h-40 w-full" />}
-
           {!marketStatus.open && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5 text-xs">
               <span className="font-medium text-gold">🔒 Markt geschlossen — Analyse läuft auf vorhandenen Daten. Trades erst nach Öffnung.</span>
@@ -491,118 +420,35 @@ export default function App() {
             </div>
           )}
 
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-1.5">
-                <LineChart className="h-3.5 w-3.5" /> {active?.name ?? "—"} · {timeframe} {connected ? "Day-Chart" : "Proxy-Chart"}
-              </CardTitle>
-              <div className="hidden items-center gap-3 font-mono text-[10px] text-muted-foreground sm:flex">
-                <span className="text-info">EMA21</span>
-                <span className="text-gold">Box</span>
-                <span className="text-up">FVG</span>
-                <span className="text-gold">Sweep</span>
-                <span>Entry/SL/TP</span>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="relative h-[440px] w-full sm:h-[600px]">
-                {active ? (
-                  <ChartPanel series={active.series} events={active.events} theme={theme} livePrice={livePrice} levels={levels} />
-                ) : (
-                  <div className="skeleton h-full w-full" />
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <TradingDashboard defaultNtfyTopic={settings.ntfyTopic} theme={theme} />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Trading-Setup · {active?.name ?? "—"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {snap ? <TradingSetup decision={decision} levels={levels} timeframe={timeframe} /> : <div className="skeleton h-24 w-full" />}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-4">
-              <SignalHistory entries={histEntries} onExport={exportCSV} />
-            </CardContent>
-          </Card>
+          {/* Box-Strategie: nur noch stille Referenz, klappbar */}
+          <details className="rounded-lg border border-border/50 bg-card/40">
+            <summary className="cursor-pointer select-none px-4 py-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground">
+              Box-Strategie · nur Referenz (keine Alarme)
+            </summary>
+            <div className="flex flex-col gap-4 p-4 pt-0">
+              {snap ? <SignalCard decision={decision} factors={factors} timeframe={timeframe} /> : <div className="skeleton h-40 w-full" />}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Trading-Setup · {active?.name ?? "—"}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {snap ? <TradingSetup decision={decision} levels={levels} timeframe={timeframe} /> : <div className="skeleton h-24 w-full" />}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4">
+                  <SignalHistory entries={histEntries} onExport={exportCSV} />
+                </CardContent>
+              </Card>
+            </div>
+          </details>
         </div>
 
         {/* sidebar */}
         <aside className="flex flex-col gap-4">
-          <TradingDashboard defaultNtfyTopic={settings.ntfyTopic} />
-
           <TrackRecord />
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Märkte-Scanner</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Watchlist results={scan} selectedEpic={active?.epic ?? selectedEpic} onSelect={setSelectedEpic} scanning={scanning} connected={connected} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Strategie-Check · {active?.name ?? "—"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {snap ? (
-                <StrategyCheck factors={factors} strength={snap.strength} strengthMin={settings.params.strengthMin} outlook={outlook} />
-              ) : (
-                <div className="skeleton h-40 w-full" />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Backtest &amp; Monte Carlo · {active?.name ?? "—"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {stratStats ? (
-                <StrategyStatsPanel
-                  stats={stratStats}
-                  trades={backtest?.trades ?? []}
-                  wf={backtest?.wf ?? null}
-                  assetName={active?.name ?? "—"}
-                />
-              ) : (
-                <div className="skeleton h-40 w-full" />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Edge-Erkennung · {active?.name ?? "—"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <EdgeDetection edges={edges} assetName={active?.name ?? "—"} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Strategie-Optimierung · {active?.name ?? "—"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <StrategyOptPanel grade={stratGrade} assetName={active?.name ?? "—"} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Overnight Drift · {active?.name ?? "—"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <OvernightDrift setup={overnightSetup} assetName={active?.name ?? "—"} />
-            </CardContent>
-          </Card>
 
           <Card>
             <CardHeader>
@@ -610,15 +456,6 @@ export default function App() {
             </CardHeader>
             <CardContent>
               <BrokerPanel status={broker} account={account} positions={positions} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Trading-Journal</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <TradingJournal connected={connected} />
             </CardContent>
           </Card>
 
@@ -649,11 +486,67 @@ export default function App() {
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Trading-Journal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TradingJournal connected={connected} />
+            </CardContent>
+          </Card>
+
+          {/* Box-Analyse: stille Referenz, klappbar */}
+          <details className="rounded-lg border border-border/50 bg-card/40">
+            <summary className="cursor-pointer select-none px-4 py-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground">
+              Box-Analyse · Referenz
+            </summary>
+            <div className="flex flex-col gap-4 p-4 pt-0">
+              <Card>
+                <CardHeader><CardTitle>Märkte-Scanner</CardTitle></CardHeader>
+                <CardContent>
+                  <Watchlist results={scan} selectedEpic={active?.epic ?? selectedEpic} onSelect={setSelectedEpic} scanning={scanning} connected={connected} />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Strategie-Check · {active?.name ?? "—"}</CardTitle></CardHeader>
+                <CardContent>
+                  {snap ? (
+                    <StrategyCheck factors={factors} strength={snap.strength} strengthMin={settings.params.strengthMin} outlook={outlook} />
+                  ) : (
+                    <div className="skeleton h-40 w-full" />
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Backtest &amp; Monte Carlo · {active?.name ?? "—"}</CardTitle></CardHeader>
+                <CardContent>
+                  {stratStats ? (
+                    <StrategyStatsPanel stats={stratStats} trades={backtest?.trades ?? []} wf={backtest?.wf ?? null} assetName={active?.name ?? "—"} />
+                  ) : (
+                    <div className="skeleton h-40 w-full" />
+                  )}
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Edge-Erkennung · {active?.name ?? "—"}</CardTitle></CardHeader>
+                <CardContent><EdgeDetection edges={edges} assetName={active?.name ?? "—"} /></CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Strategie-Optimierung · {active?.name ?? "—"}</CardTitle></CardHeader>
+                <CardContent><StrategyOptPanel grade={stratGrade} assetName={active?.name ?? "—"} /></CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle>Overnight Drift · {active?.name ?? "—"}</CardTitle></CardHeader>
+                <CardContent><OvernightDrift setup={overnightSetup} assetName={active?.name ?? "—"} /></CardContent>
+              </Card>
+            </div>
+          </details>
         </aside>
       </main>
 
       <div className="shrink-0 border-t border-border bg-card/60 px-4 py-1.5 text-center font-mono text-[10px] text-muted-foreground">
-        Multi-Asset Day-Trading · {timeframe} Box-System + EMA 9/21/50 + MACD + RSI · <kbd className="text-foreground">S</kbd> Refresh ·{" "}
+        ICT-Strategie (TJR) · US100 + US500 · 5m-Setup + 1m-Entry · <kbd className="text-foreground">S</kbd> Refresh ·{" "}
         <kbd className="text-foreground">A</kbd> Alarm · Keine Anlageberatung
       </div>
 

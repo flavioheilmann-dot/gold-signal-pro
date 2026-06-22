@@ -9,7 +9,7 @@
 // laptop-off notifications; this engine is the live, in-app analyst.
 // A Node/Electron worker could import these same pure modules unchanged.
 // ─────────────────────────────────────────────────────────────
-import type { Bias, MarketContext, PaperTrade, RiskConfig, TradeSignal } from "../types";
+import type { Bias, Candle, MarketContext, PaperTrade, RiskConfig, TradeSignal } from "../types";
 import { DEFAULT_RISK } from "../types";
 import type { DataProvider } from "../data/DataProvider";
 import { analyze, type SetupStage } from "../strategy/StrategyEngine";
@@ -31,7 +31,7 @@ export interface EngineOptions {
 }
 
 export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
-  symbol: "GOLD",
+  symbol: "US100",
   timeframe: "5m",
   candleLimit: 500, // ~2 days of 5m candles → prev-day & session levels
   intervalMs: 8000,
@@ -64,6 +64,7 @@ export interface EngineStatus {
   indexAligned: boolean | null; // null = not an index (gate N/A)
   indexAlignDir: StructTrend | null;
   ltfConfirmed: boolean | null; // 1m entry trigger state (null = MTF off / on 1m)
+  candles: Candle[]; // last analyzed HTF candles (for the chart)
 }
 
 export interface PersistedEngine {
@@ -93,6 +94,7 @@ export class BackgroundEngine {
   private indexAligned: boolean | null = null;
   private indexAlignDir: StructTrend | null = null;
   private ltfConfirmed: boolean | null = null;
+  private lastCandles: Candle[] = [];
   // index-alignment reference series, refetched at most every 30s
   private alignCache: { at: number; tf: string; aligned: boolean; dir: StructTrend } | null = null;
 
@@ -132,6 +134,7 @@ export class BackgroundEngine {
       this.indexAligned = null;
       this.indexAlignDir = null;
       this.ltfConfirmed = null;
+      this.lastCandles = [];
       this.alignCache = null;
       if (this.running) this.tick();
     }
@@ -166,6 +169,7 @@ export class BackgroundEngine {
       const candles = await this.provider.getCandles(this.opts.symbol, this.opts.timeframe, this.opts.candleLimit);
       this.lastCheck = Date.now();
       this.candleCount = candles.length;
+      this.lastCandles = candles;
       if (candles.length < 60) {
         this.error =
           this.provider.mode === "live"
@@ -287,6 +291,7 @@ export class BackgroundEngine {
       indexAligned: this.indexAligned,
       indexAlignDir: this.indexAlignDir,
       ltfConfirmed: this.ltfConfirmed,
+      candles: this.lastCandles,
     };
   }
 

@@ -9,43 +9,55 @@ import {
   type LineData,
   type SeriesMarker,
 } from "lightweight-charts";
-import type { StrategySeries, SignalEvent, TradeLevels } from "@/lib/signalEngine";
+import type { Candle } from "@/trading/types";
 import { detectFVGs } from "@/trading/strategy/fvg";
 import { detectLiquidityLevels } from "@/trading/strategy/liquidity";
 import { findRecentSweep } from "@/trading/strategy/sweep";
 import { detectStructureShift } from "@/trading/strategy/structure";
 
+export interface ChartLevels {
+  direction: "long" | "short";
+  entry: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+}
+
 interface Props {
-  series: StrategySeries | null;
-  events: SignalEvent[];
+  candles: Candle[];
   theme: "dark" | "light";
   livePrice?: number;
-  levels?: TradeLevels | null;
+  levels?: ChartLevels | null;
+  /** Changing this resets the zoom/pan (fit to content); same value preserves it. */
+  symbol?: string;
 }
 
 interface FvgBox { dir: "bullish" | "bearish"; top: number; bottom: number; time: number }
 
-function lineData(times: number[], arr: (number | null)[]): LineData[] {
+/** Simple EMA over closes, null until the period fills. */
+function emaSeries(candles: Candle[], period: number): LineData[] {
+  const k = 2 / (period + 1);
   const out: LineData[] = [];
-  for (let i = 0; i < times.length; i++) {
-    if (arr[i] != null) out.push({ time: times[i] as Time, value: arr[i] as number });
-  }
+  let prev: number | null = null;
+  candles.forEach((c, i) => {
+    prev = prev == null ? c.close : c.close * k + prev * (1 - k);
+    if (i >= period - 1) out.push({ time: c.time as Time, value: +prev.toFixed(2) });
+  });
   return out;
 }
 
-// Candlestick day-trading chart with ICT overlays drawn directly on it:
-// filled Fair-Value-Gap boxes, the active Entry/SL/TP lines, the most recent
-// liquidity sweep marker + market-structure-shift line, EMA21 and the box.
-export function ChartPanel({ series, events, theme, livePrice, levels }: Props) {
+// ICT day-trading candlestick chart, zoomable/pannable. Draws the ICT context
+// directly on it: filled Fair-Value-Gap boxes, the most recent liquidity sweep
+// marker, the market-structure-shift line, EMA21 and the active Entry/SL/TP.
+export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const emaRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const boxHighRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const boxLowRef = useRef<ISeriesApi<"Line"> | null>(null);
   const dynLinesRef = useRef<IPriceLine[]>([]);
   const fvgsRef = useRef<FvgBox[]>([]);
+  const lastSymbolRef = useRef<string | undefined>(undefined);
 
   function drawOverlay() {
     const svg = svgRef.current, chart = chartRef.current, candle = candleRef.current, el = containerRef.current;
@@ -86,8 +98,9 @@ export function ChartPanel({ series, events, theme, livePrice, levels }: Props) 
       rightPriceScale: { borderColor: "rgba(148,163,184,0.1)" },
       timeScale: { borderColor: "rgba(148,163,184,0.1)", timeVisible: true, secondsVisible: false },
       crosshair: { mode: 1 },
-      handleScale: false,
-      handleScroll: false,
+      // zoom + pan enabled (wheel, pinch, drag)
+      handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
     });
     chartRef.current = chart;
 
@@ -98,8 +111,6 @@ export function ChartPanel({ series, events, theme, livePrice, levels }: Props) 
       priceLineColor: "rgba(240,180,41,0.6)",
     });
     emaRef.current = chart.addLineSeries({ color: "rgba(77,166,255,0.85)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-    boxHighRef.current = chart.addLineSeries({ color: "rgba(240,180,41,0.55)", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-    boxLowRef.current = chart.addLineSeries({ color: "rgba(240,180,41,0.55)", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
 
     const ro = new ResizeObserver(() => requestAnimationFrame(drawOverlay));
     ro.observe(containerRef.current);
@@ -109,7 +120,7 @@ export function ChartPanel({ series, events, theme, livePrice, levels }: Props) 
       ro.disconnect();
       chart.remove();
       chartRef.current = null; candleRef.current = null; emaRef.current = null;
-      boxHighRef.current = null; boxLowRef.current = null; dynLinesRef.current = []; fvgsRef.current = [];
+      dynLinesRef.current = []; fvgsRef.current = [];
     };
   }, []);
 
@@ -119,41 +130,34 @@ export function ChartPanel({ series, events, theme, livePrice, levels }: Props) 
 
   useEffect(() => {
     const candle = candleRef.current;
-    if (!candle || !series) return;
+    if (!candle || !candles.length) return;
 
-    candle.setData(series.candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close })));
-    emaRef.current?.setData(lineData(series.times, series.emaSlow));
-    boxHighRef.current?.setData(lineData(series.times, series.boxHigh));
-    boxLowRef.current?.setData(lineData(series.times, series.boxLow));
+    candle.setData(candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close })));
+    emaRef.current?.setData(emaSeries(candles, 21));
 
     // ── ICT context: nearest unfilled FVGs, latest sweep + structure shift ──
-    const last = series.candles[series.candles.length - 1]?.close ?? 0;
-    fvgsRef.current = detectFVGs(series.candles)
+    const last = candles[candles.length - 1]?.close ?? 0;
+    fvgsRef.current = detectFVGs(candles)
       .filter((f) => !f.filled)
       .sort((a, b) => Math.abs(a.mid - last) - Math.abs(b.mid - last))
       .slice(0, 4)
-      .map((f) => ({ dir: f.dir, top: f.top, bottom: f.bottom, time: series.candles[f.index]?.time ?? last }));
+      .map((f) => ({ dir: f.dir, top: f.top, bottom: f.bottom, time: candles[f.index]?.time ?? last }));
 
-    const liq = detectLiquidityLevels(series.candles);
-    const sweep = findRecentSweep(series.candles, liq, 14);
-    const mss = sweep ? detectStructureShift(series.candles, sweep.index, sweep.dir) : null;
+    const liq = detectLiquidityLevels(candles);
+    const sweep = findRecentSweep(candles, liq, 14);
+    const mss = sweep ? detectStructureShift(candles, sweep.index, sweep.dir) : null;
 
-    // markers: confirmed BUY/SELL events + the sweep
-    const markers: SeriesMarker<Time>[] = events.slice(-6).map((e) => {
-      const buy = e.state === "BUY" || e.state === "STRONG_BUY";
-      return { time: e.time as Time, position: buy ? "belowBar" : "aboveBar", color: buy ? "#10e090" : "#ff3d5a", shape: buy ? "arrowUp" : "arrowDown", text: buy ? "BUY" : "SELL" };
-    });
+    const markers: SeriesMarker<Time>[] = [];
     if (sweep) {
-      const swc = series.candles[sweep.index];
+      const swc = candles[sweep.index];
       if (swc) markers.push({ time: swc.time as Time, position: sweep.dir === "bullish" ? "belowBar" : "aboveBar", color: "#f0b429", shape: "circle", text: "SWEEP" });
     }
-    markers.sort((a, b) => (a.time as number) - (b.time as number));
     candle.setMarkers(markers);
 
     // dynamic price lines: Entry / SL / TP1 / TP2 + MSS
     for (const pl of dynLinesRef.current) candle.removePriceLine(pl);
     dynLinesRef.current = [];
-    if (levels && levels.direction !== "flat") {
+    if (levels) {
       const add = (price: number, color: string, title: string, style = 0) =>
         dynLinesRef.current.push(candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style as 0, axisLabelVisible: true, title }));
       add(levels.entry, "rgba(240,180,41,0.95)", "Entry");
@@ -165,18 +169,23 @@ export function ChartPanel({ series, events, theme, livePrice, levels }: Props) 
       dynLinesRef.current.push(candle.createPriceLine({ price: mss.brokenLevel, color: "rgba(168,130,255,0.9)", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "MSS" }));
     }
 
-    chartRef.current?.timeScale().fitContent();
+    // fit the view only on first load or when the instrument changes — otherwise
+    // preserve the user's manual zoom/pan across the polling updates.
+    if (symbol !== lastSymbolRef.current) {
+      lastSymbolRef.current = symbol;
+      chartRef.current?.timeScale().fitContent();
+    }
     requestAnimationFrame(drawOverlay);
-  }, [series, events, levels]);
+  }, [candles, levels, symbol]);
 
   // live price → grow the forming candle + keep FVG boxes aligned
   useEffect(() => {
     const candle = candleRef.current;
-    if (!candle || !series || livePrice == null || !series.candles.length) return;
-    const lc = series.candles[series.candles.length - 1];
+    if (!candle || livePrice == null || !candles.length) return;
+    const lc = candles[candles.length - 1];
     candle.update({ time: lc.time as Time, open: lc.open, high: Math.max(lc.high, livePrice), low: Math.min(lc.low, livePrice), close: livePrice });
     requestAnimationFrame(drawOverlay);
-  }, [livePrice, series]);
+  }, [livePrice, candles]);
 
   return (
     <div ref={containerRef} className="relative h-full w-full">

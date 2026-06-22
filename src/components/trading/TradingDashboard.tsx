@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import {
   Activity, Play, Square, Cpu, ShieldAlert, Target, ListChecks, FlaskConical,
-  TrendingUp, TrendingDown, AlertTriangle, Bell, Database,
+  TrendingUp, TrendingDown, AlertTriangle, Bell, Database, Maximize2, Minimize2, LineChart,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTradingEngine } from "@/trading/engine/useTradingEngine";
-import { WATCHLIST } from "@/lib/assets";
+import { TJR_ASSETS } from "@/lib/assets";
+import { ChartPanel, type ChartLevels } from "@/components/ChartPanel";
 import { requestNotifyPermission } from "@/trading/notifications/notify";
 import { liveTradingEnabled } from "@/trading/broker/BrokerAdapter";
 import type { EngineStatus } from "@/trading/engine/BackgroundEngine";
@@ -89,11 +90,12 @@ function Stat({ label, value, tone, sub }: { label: string; value: string; tone?
   );
 }
 
-export function TradingDashboard({ defaultNtfyTopic = "" }: { defaultNtfyTopic?: string }) {
+export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { defaultNtfyTopic?: string; theme?: "dark" | "light" }) {
   const eng = useTradingEngine();
   const s: EngineStatus | null = eng.status;
   const [notifyOn, setNotifyOn] = useState(false);
   const [autoPaper, setAutoPaper] = useState(true);
+  const [chartBig, setChartBig] = useState(false);
 
   // keep status ticking for the "last check" relative time
   const [, force] = useState(0);
@@ -107,6 +109,9 @@ export function TradingDashboard({ defaultNtfyTopic = "" }: { defaultNtfyTopic?:
   const running = s.running;
   const live = liveTradingEnabled();
   const sig = s.currentSignal;
+  const chartLevels: ChartLevels | null = sig
+    ? { direction: sig.direction === "BUY" ? "long" : "short", entry: sig.entry, stopLoss: sig.stopLoss, takeProfit1: sig.takeProfit1, takeProfit2: sig.takeProfit2 }
+    : null;
 
   const toggleNotify = async () => {
     const next = !notifyOn;
@@ -154,7 +159,7 @@ export function TradingDashboard({ defaultNtfyTopic = "" }: { defaultNtfyTopic?:
               onChange={(e) => eng.setSymbol(e.target.value)}
               className="rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] text-foreground"
             >
-              {WATCHLIST.map((a) => (
+              {TJR_ASSETS.map((a) => (
                 <option key={a.epic} value={a.epic}>{a.name}</option>
               ))}
             </select>
@@ -209,6 +214,36 @@ export function TradingDashboard({ defaultNtfyTopic = "" }: { defaultNtfyTopic?:
             </span>
           )}
           {s.error && <span className="text-down">⚠ {s.error}</span>}
+        </div>
+
+        {/* ICT chart with overlays (zoom + pan, enlarge) */}
+        <div className="rounded-lg border border-border/60 p-2">
+          <div className="mb-1.5 flex items-center justify-between px-1">
+            <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              <LineChart className="h-3 w-3" /> {eng.symbol} · {eng.timeframe} · ICT-Chart
+            </span>
+            <button
+              onClick={() => setChartBig((v) => !v)}
+              title={chartBig ? "Verkleinern" : "Vergrössern"}
+              className="flex items-center gap-1 rounded-md border border-border/60 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground hover:text-primary"
+            >
+              {chartBig ? <><Minimize2 className="h-3 w-3" /> kleiner</> : <><Maximize2 className="h-3 w-3" /> grösser</>}
+            </button>
+          </div>
+          <div className={cn("w-full transition-[height]", chartBig ? "h-[78vh]" : "h-[300px]")}>
+            {s.candles.length >= 20 ? (
+              <ChartPanel candles={s.candles} symbol={eng.symbol} theme={theme} levels={chartLevels} />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-[11px] text-muted-foreground">
+                {running ? "Lade Kerzen…" : "Engine starten für Chart"}
+              </div>
+            )}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-3 px-1 font-mono text-[9px] text-muted-foreground">
+            <span className="text-info">EMA21</span><span className="text-up">FVG</span>
+            <span className="text-gold">Sweep</span><span style={{ color: "rgba(168,130,255,0.9)" }}>MSS</span>
+            <span>Entry/SL/TP</span><span className="ml-auto">Mausrad = Zoom · Ziehen = Pan</span>
+          </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">

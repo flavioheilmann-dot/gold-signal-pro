@@ -44,7 +44,8 @@ const DRY_RUN = process.env.ICT_DRY_RUN === "true";
 const TF = process.env.ICT_TIMEFRAME || "5m";
 const RES_MAP: Record<string, string> = { "1m": "MINUTE", "5m": "MINUTE_5", "15m": "MINUTE_15" };
 const RESOLUTION = RES_MAP[TF] ?? "MINUTE_5";
-const SYMBOLS = (process.env.ICT_SYMBOLS || "GOLD,US100,US500,DE40,EURUSD,GBPUSD,USDJPY,BTCUSD")
+// TJR-Instrumente: NASDAQ (US100) Haupt-Trade + S&P 500 (US500) als Alignment.
+const SYMBOLS = (process.env.ICT_SYMBOLS || "US100,US500")
   .split(",").map((s) => s.trim()).filter(Boolean);
 
 if (!API_KEY || !IDENT || !PASS) { console.error("Missing Capital.com credentials"); process.exit(1); }

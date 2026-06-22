@@ -35,10 +35,10 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [backtesting, setBacktesting] = useState(false);
   // symbol + timeframe + poll cadence survive a data-source rebuild via refs
-  const [symbol, setSymbolUi] = useState("GOLD");
+  const [symbol, setSymbolUi] = useState("US100");
   const [timeframe, setTimeframeUi] = useState("5m");
   const [intervalMs, setIntervalUi] = useState(8000);
-  const symbolRef = useRef("GOLD");
+  const symbolRef = useRef("US100");
   const timeframeRef = useRef("5m");
   const intervalRef = useRef(8000);
 

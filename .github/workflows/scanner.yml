@@ -1,9 +1,9 @@
-name: Signal Scanner
+name: Signal Scanner (Box — DEAKTIVIERT)
 
+# Box-Strategie abgeschaltet: der User handelt nur noch ICT (siehe ict-scanner.yml).
+# Der Cron-Trigger ist entfernt; nur noch manuell startbar, falls je wieder gebraucht.
 on:
-  schedule:
-    - cron: '*/5 * * * *'  # every 5 minutes
-  workflow_dispatch: {}     # manual trigger
+  workflow_dispatch: {}     # nur manueller Start
 
 jobs:
   scan:
