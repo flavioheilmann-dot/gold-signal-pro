@@ -4,10 +4,12 @@ import {
   ColorType,
   type IChartApi,
   type ISeriesApi,
+  type IPriceLine,
   type Time,
   type LineData,
 } from "lightweight-charts";
 import type { StrategySeries, SignalEvent } from "@/lib/signalEngine";
+import { detectFVGs } from "@/trading/strategy/fvg";
 
 interface Props {
   series: StrategySeries | null;
@@ -23,15 +25,17 @@ function lineData(times: number[], arr: (number | null)[]): LineData[] {
   return out;
 }
 
-// Deliberately simple day-trading chart: price area + EMA21 + the active
-// box high/low. It keeps the chart calm while still showing the trigger zone.
+// Real candlestick day-trading chart: candles + EMA21 + the active box high/low,
+// plus the nearest unfilled Fair Value Gaps drawn as coloured zones (price-line
+// bands) and BUY/SELL signal markers.
 export function ChartPanel({ series, events, theme }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const areaRef = useRef<ISeriesApi<"Area"> | null>(null);
+  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const emaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const boxHighRef = useRef<ISeriesApi<"Line"> | null>(null);
   const boxLowRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const fvgLinesRef = useRef<IPriceLine[]>([]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -59,22 +63,24 @@ export function ChartPanel({ series, events, theme }: Props) {
     });
     chartRef.current = chart;
 
-    areaRef.current = chart.addAreaSeries({
-      lineColor: "#f0b429",
-      topColor: "rgba(240,180,41,0.25)",
-      bottomColor: "rgba(240,180,41,0.02)",
-      lineWidth: 2,
-      priceLineColor: "rgba(240,180,41,0.5)",
+    candleRef.current = chart.addCandlestickSeries({
+      upColor: "#10e090",
+      downColor: "#ff3d5a",
+      borderUpColor: "#10e090",
+      borderDownColor: "#ff3d5a",
+      wickUpColor: "rgba(16,224,144,0.7)",
+      wickDownColor: "rgba(255,61,90,0.7)",
+      priceLineColor: "rgba(240,180,41,0.6)",
     });
     emaRef.current = chart.addLineSeries({
-      color: "rgba(77,166,255,0.8)",
+      color: "rgba(77,166,255,0.85)",
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
     boxHighRef.current = chart.addLineSeries({
-      color: "rgba(240,180,41,0.65)",
+      color: "rgba(240,180,41,0.55)",
       lineWidth: 1,
       lineStyle: 2,
       priceLineVisible: false,
@@ -82,7 +88,7 @@ export function ChartPanel({ series, events, theme }: Props) {
       crosshairMarkerVisible: false,
     });
     boxLowRef.current = chart.addLineSeries({
-      color: "rgba(240,180,41,0.65)",
+      color: "rgba(240,180,41,0.55)",
       lineWidth: 1,
       lineStyle: 2,
       priceLineVisible: false,
@@ -93,10 +99,11 @@ export function ChartPanel({ series, events, theme }: Props) {
     return () => {
       chart.remove();
       chartRef.current = null;
-      areaRef.current = null;
+      candleRef.current = null;
       emaRef.current = null;
       boxHighRef.current = null;
       boxLowRef.current = null;
+      fvgLinesRef.current = [];
     };
   }, []);
 
@@ -107,15 +114,23 @@ export function ChartPanel({ series, events, theme }: Props) {
   }, [theme]);
 
   useEffect(() => {
-    const area = areaRef.current;
-    if (!area || !series) return;
-    area.setData(
-      series.times.map((t, i) => ({ time: t as Time, value: series.prices[i] }))
+    const candle = candleRef.current;
+    if (!candle || !series) return;
+
+    candle.setData(
+      series.candles.map((c) => ({
+        time: c.time as Time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      }))
     );
     emaRef.current?.setData(lineData(series.times, series.emaSlow));
     boxHighRef.current?.setData(lineData(series.times, series.boxHigh));
     boxLowRef.current?.setData(lineData(series.times, series.boxLow));
-    area.setMarkers(
+
+    candle.setMarkers(
       events.slice(-6).map((e) => {
         const buy = e.state === "BUY" || e.state === "STRONG_BUY";
         return {
@@ -127,6 +142,24 @@ export function ChartPanel({ series, events, theme }: Props) {
         };
       })
     );
+
+    // ── Fair Value Gaps: draw the nearest unfilled ones as coloured bands ──
+    for (const pl of fvgLinesRef.current) candle.removePriceLine(pl);
+    fvgLinesRef.current = [];
+    const last = series.candles[series.candles.length - 1]?.close ?? 0;
+    const near = detectFVGs(series.candles)
+      .filter((f) => !f.filled)
+      .sort((a, b) => Math.abs(a.mid - last) - Math.abs(b.mid - last))
+      .slice(0, 3);
+    for (const f of near) {
+      const bull = f.dir === "bullish";
+      const col = bull ? "rgba(16,224,144,0.85)" : "rgba(255,61,90,0.85)";
+      fvgLinesRef.current.push(
+        candle.createPriceLine({ price: f.top, color: col, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: bull ? "FVG ↑" : "FVG ↓" }),
+        candle.createPriceLine({ price: f.bottom, color: col, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: "" })
+      );
+    }
+
     chartRef.current?.timeScale().fitContent();
   }, [series, events]);
 
