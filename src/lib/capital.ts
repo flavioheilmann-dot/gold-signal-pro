@@ -75,6 +75,26 @@ export async function getStatus(): Promise<BrokerStatus> {
 export const getAccount = () => jget<BrokerAccount>("/account");
 export const getPositions = () => jget<{ positions: BrokerPosition[] }>("/positions");
 
+export interface Quote {
+  bid: number;
+  offer: number;
+  mid: number;
+  status: string | null;
+  at: number;
+}
+/** Near-real-time bid/offer snapshot for one instrument (for live price/candle). */
+export async function getQuote(epic: string): Promise<Quote | null> {
+  try {
+    const d = await jget<{ bid: number | null; offer: number | null; status: string | null }>(
+      `/market/${encodeURIComponent(epic)}`
+    );
+    if (d.bid == null || d.offer == null) return null;
+    return { bid: d.bid, offer: d.offer, mid: (d.bid + d.offer) / 2, status: d.status, at: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
 import type { Candle } from "./api";
 export async function getCandles(
   epic: string,

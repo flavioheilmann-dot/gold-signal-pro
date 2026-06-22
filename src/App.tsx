@@ -57,6 +57,7 @@ import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useInterval } from "@/hooks/useInterval";
 import { useBroker } from "@/hooks/useBroker";
 import { useScanner } from "@/hooks/useScanner";
+import { useLiveQuote } from "@/hooks/useLiveQuote";
 import { beep, ensureNotificationPermission, notify, pushNtfy } from "@/lib/alerts";
 
 const FALLBACK: Decision = { state: "WAIT", bias: "flat", confidence: 0, trend: "range", reason: "Lade Daten …" };
@@ -198,6 +199,9 @@ export default function App() {
   );
 
   const marketStatus = useMemo(() => getMarketStatus(now), [now]);
+  // near-real-time quote for the active asset → live price + forming candle
+  const liveQuote = useLiveQuote(active?.epic, connected && marketStatus.open);
+  const livePrice = liveQuote && active && Math.abs(liveQuote.mid - active.price) / active.price < 0.1 ? liveQuote.mid : undefined;
   const hot = decision.bias !== "flat" && decision.confidence >= HOT_MIN_CONF && !!levels;
 
   // history = the active asset's confirmed signal events
@@ -405,7 +409,7 @@ export default function App() {
 
   const ticker = {
     name: active ? `${active.name}` : "—",
-    price: active?.price ?? null,
+    price: livePrice ?? active?.price ?? null,
     changePct: active?.changePct ?? 0,
     sourceLabel: active?.sourceLabel ?? "—",
     note: active?.note,
@@ -426,7 +430,7 @@ export default function App() {
     mode: dataMode,
     sourceLabel: connected ? "Capital.com" : data?.candleSource ?? "—",
     timeframe,
-    fetchedAt: connected ? scanAt : data?.fetchedAt ?? null,
+    fetchedAt: connected ? liveQuote?.at ?? scanAt : data?.fetchedAt ?? null,
     refreshSec: settings.refreshSec,
     proxyNote:
       dataMode === "SIMULATION"
@@ -502,7 +506,7 @@ export default function App() {
             <CardContent>
               <div className="relative h-[300px] w-full sm:h-[340px]">
                 {active ? (
-                  <ChartPanel series={active.series} events={active.events} theme={theme} />
+                  <ChartPanel series={active.series} events={active.events} theme={theme} livePrice={livePrice} />
                 ) : (
                   <div className="skeleton h-full w-full" />
                 )}

@@ -15,6 +15,8 @@ interface Props {
   series: StrategySeries | null;
   events: SignalEvent[];
   theme: "dark" | "light";
+  /** Near-real-time price → updates the forming candle live. */
+  livePrice?: number;
 }
 
 function lineData(times: number[], arr: (number | null)[]): LineData[] {
@@ -28,7 +30,7 @@ function lineData(times: number[], arr: (number | null)[]): LineData[] {
 // Real candlestick day-trading chart: candles + EMA21 + the active box high/low,
 // plus the nearest unfilled Fair Value Gaps drawn as coloured zones (price-line
 // bands) and BUY/SELL signal markers.
-export function ChartPanel({ series, events, theme }: Props) {
+export function ChartPanel({ series, events, theme, livePrice }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -162,6 +164,20 @@ export function ChartPanel({ series, events, theme }: Props) {
 
     chartRef.current?.timeScale().fitContent();
   }, [series, events]);
+
+  // live price → grow the forming (last) candle in real time
+  useEffect(() => {
+    const candle = candleRef.current;
+    if (!candle || !series || livePrice == null || !series.candles.length) return;
+    const last = series.candles[series.candles.length - 1];
+    candle.update({
+      time: last.time as Time,
+      open: last.open,
+      high: Math.max(last.high, livePrice),
+      low: Math.min(last.low, livePrice),
+      close: livePrice,
+    });
+  }, [livePrice, series]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
