@@ -11,6 +11,7 @@ import { scoreSignal, MIN_SIGNAL_SCORE } from "./confidence";
 
 export type SetupStage =
   | "no_data"
+  | "no_alignment" // TJR: NASDAQ/ES disagree → stand aside
   | "waiting_sweep"
   | "waiting_mss"
   | "waiting_fvg"
@@ -30,6 +31,7 @@ export interface AnalysisResult {
 
 const STAGE_LABEL: Record<SetupStage, string> = {
   no_data: "Zu wenig Daten",
+  no_alignment: "Indizes nicht aligned — kein Trade",
   waiting_sweep: "Warte auf Liquidity Sweep",
   waiting_mss: "Sweep erkannt — warte auf Structure Shift",
   waiting_fvg: "Structure Shift — warte auf FVG",
@@ -64,6 +66,8 @@ export function analyze(
   });
 
   if (candles.length < 60) return base("no_data");
+  // TJR's top rule: don't trade indices when NASDAQ and ES disagree
+  if (ctx.indexAligned === false) return base("no_alignment");
   const levels = detectLiquidityLevels(candles, opts.k);
 
   // A) + B) liquidity sweep

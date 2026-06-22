@@ -7,6 +7,7 @@ import { PaperBroker } from "./paper/PaperBroker";
 import { analyze } from "./strategy/StrategyEngine";
 import { MockDataProvider } from "./data/MockDataProvider";
 import { runBacktest } from "./backtest/backtest";
+import { structureTrend, indicesAligned, equilibrium, detectInverseFVGs } from "./strategy/tjr";
 import { DEFAULT_RISK, type Candle, type LiquidityLevel, type TradeSignal } from "./types";
 
 let pass = 0, fail = 0;
@@ -108,7 +109,25 @@ const C = (o: number, h: number, l: number, cl: number, t = 0): Candle => ({ tim
   const bt = runBacktest(candles, "GOLD", DEFAULT_RISK);
   check("backtest returns numeric trades", typeof bt.trades === "number" && bt.equityCurve.length >= 1, bt.trades);
   check("winRate in [0,1]", bt.winRate >= 0 && bt.winRate <= 1, bt.winRate);
+  // TJR index-alignment gate: explicitly-unaligned index → no setup
+  const blocked = analyze(candles, { symbol: "US100", spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false, indexAligned: false }, DEFAULT_RISK);
+  check("indexAligned:false -> no_alignment, no signal", blocked.stage === "no_alignment" && blocked.signal === null, blocked.stage);
   console.log(`     (backtest: ${bt.trades} trades, winRate ${(bt.winRate * 100).toFixed(0)}%, PF ${bt.profitFactor}, netPnl ${bt.netPnl})`);
+}
+
+// ── TJR building blocks ──
+{
+  console.log("TJR:");
+  const Z = (hi: number, lo: number): Candle => ({ time: 0, open: (hi + lo) / 2, high: hi, low: lo, close: (hi + lo) / 2 });
+  const up = [Z(100, 98), Z(106, 102), Z(103, 99), Z(110, 105), Z(107, 103), Z(116, 111), Z(113, 109)];
+  const down = [Z(100, 98), Z(96, 92), Z(99, 95), Z(90, 86), Z(93, 89), Z(84, 80), Z(87, 83)];
+  check("structureTrend up", structureTrend(up, 1) === "up", structureTrend(up, 1));
+  check("structureTrend down", structureTrend(down, 1) === "down", structureTrend(down, 1));
+  check("indices aligned (up,up)", indicesAligned(up, up, 1).aligned, true);
+  check("indices NOT aligned (up,down)", !indicesAligned(up, down, 1).aligned, true);
+  check("equilibrium(110,90)=100", equilibrium(110, 90) === 100, equilibrium(110, 90));
+  const ifvg = detectInverseFVGs([Z(10, 5), Z(13, 9), Z(15, 12), { time: 0, open: 11, high: 12, low: 8, close: 9 }]);
+  check("inverse FVG bearish @10", ifvg[0]?.dir === "bearish" && ifvg[0]?.level === 10, ifvg[0]);
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

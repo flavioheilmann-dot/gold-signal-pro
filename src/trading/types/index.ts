@@ -145,6 +145,11 @@ export interface MarketContext {
   newsRisk: boolean; // high-impact news imminent
   contextConfirms: boolean; // correlated context markets agree (DXY/indices)
   choppy: boolean; // low-quality, ranging conditions
+  /**
+   * TJR index-alignment filter: for index trades, false = NASDAQ/ES disagree
+   * → no trade. undefined = not an index / unknown (no gate).
+   */
+  indexAligned?: boolean;
 }
 
 export const TRADING_DISCLAIMER = "For education and paper trading only. Not financial advice.";
