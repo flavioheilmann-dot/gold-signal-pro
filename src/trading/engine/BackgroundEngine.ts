@@ -13,6 +13,7 @@ import type { Bias, MarketContext, PaperTrade, RiskConfig, TradeSignal } from ".
 import { DEFAULT_RISK } from "../types";
 import type { DataProvider } from "../data/DataProvider";
 import { analyze, type SetupStage } from "../strategy/StrategyEngine";
+import { indicesAligned, isIndexSymbol, type StructTrend } from "../strategy/tjr";
 import { MIN_PAPER_SCORE } from "../strategy/confidence";
 import { RiskManager, type RiskState, type RiskStatus } from "../risk/RiskManager";
 import { PaperBroker } from "../paper/PaperBroker";
@@ -25,6 +26,7 @@ export interface EngineOptions {
   candleLimit: number;
   intervalMs: number; // 5000–15000
   autoPaper: boolean; // auto-open paper trades at ≥75
+  mtfEntry: boolean; // require a 1m BOS to confirm the entry (multi-timeframe)
   notify: NotifyConfig;
 }
 
@@ -34,8 +36,12 @@ export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   candleLimit: 500, // ~2 days of 5m candles → prev-day & session levels
   intervalMs: 8000,
   autoPaper: true,
+  mtfEntry: true,
   notify: { browser: false, ntfy: false, ntfyTopic: "" },
 };
+
+/** Index series used as the alignment reference (NASDAQ × S&P). */
+const ALIGN_EPICS = ["US100", "US500"] as const;
 
 export interface EngineStatus {
   running: boolean;
@@ -54,6 +60,10 @@ export interface EngineStatus {
   closedToday: number;
   risk: RiskStatus;
   error: string | null;
+  // transparency for the new TJR gates
+  indexAligned: boolean | null; // null = not an index (gate N/A)
+  indexAlignDir: StructTrend | null;
+  ltfConfirmed: boolean | null; // 1m entry trigger state (null = MTF off / on 1m)
 }
 
 export interface PersistedEngine {
@@ -80,6 +90,11 @@ export class BackgroundEngine {
   private lastSignalId = "";
   private signalFeed: TradeSignal[] = [];
   private error: string | null = null;
+  private indexAligned: boolean | null = null;
+  private indexAlignDir: StructTrend | null = null;
+  private ltfConfirmed: boolean | null = null;
+  // index-alignment reference series, refetched at most every 30s
+  private alignCache: { at: number; tf: string; aligned: boolean; dir: StructTrend } | null = null;
 
   onUpdate: (status: EngineStatus) => void = () => {};
 
@@ -114,6 +129,10 @@ export class BackgroundEngine {
       this.stageLabel = "—";
       this.bias = "neutral";
       this.error = null;
+      this.indexAligned = null;
+      this.indexAlignDir = null;
+      this.ltfConfirmed = null;
+      this.alignCache = null;
       if (this.running) this.tick();
     }
 
@@ -166,19 +185,34 @@ export class BackgroundEngine {
       }
 
       const spreadPct = (await this.provider.getSpreadPct?.(this.opts.symbol)) ?? 0.02;
+
+      // TJR index-alignment gate (US100 × US500) — only for index symbols
+      const align = isIndexSymbol(this.opts.symbol) ? await this.indexAlignment() : null;
+      this.indexAligned = align ? align.aligned : null;
+      this.indexAlignDir = align ? align.dir : null;
+
+      // multi-timeframe: 1-minute candles confirm the actual entry (BOS)
+      const ltf =
+        this.opts.mtfEntry && this.opts.timeframe !== "1m"
+          ? await this.provider.getCandles(this.opts.symbol, "1m", this.opts.candleLimit)
+          : undefined;
+
       const ctx: MarketContext = {
         symbol: this.opts.symbol,
         spreadPct,
         newsRisk: false, // hook a real news feed here
-        contextConfirms: false, // hook correlated-market analysis here
+        contextConfirms: align?.aligned ?? false, // index alignment = context confirmation
         choppy: false,
+        indexAligned: align ? align.aligned : undefined,
+        indexAlignDir: align ? align.dir : undefined,
       };
 
-      const res = analyze(candles, ctx, this.rm.cfg);
+      const res = analyze(candles, ctx, this.rm.cfg, undefined, ltf);
       this.stage = res.stage;
       this.stageLabel = res.stageLabel;
       this.bias = res.bias;
       this.currentSignal = res.signal;
+      this.ltfConfirmed = res.ltfConfirmed;
 
       // new signal → feed + notify (deduped by id)
       if (res.signal && res.signal.id !== this.lastSignalId) {
@@ -212,6 +246,26 @@ export class BackgroundEngine {
     }
   }
 
+  /**
+   * Index-alignment reference (US100 × US500) on the active timeframe, cached
+   * for 30s so the gate doesn't add a fetch storm. Returns range/false when a
+   * series is missing so the gate fails safe (no_alignment → stand aside).
+   */
+  private async indexAlignment(): Promise<{ aligned: boolean; dir: StructTrend }> {
+    const now = Date.now();
+    if (this.alignCache && this.alignCache.tf === this.opts.timeframe && now - this.alignCache.at < 30_000) {
+      return { aligned: this.alignCache.aligned, dir: this.alignCache.dir };
+    }
+    const [a, b] = await Promise.all(
+      ALIGN_EPICS.map((e) => this.provider.getCandles(e, this.opts.timeframe, 200))
+    );
+    const res = a.length >= 30 && b.length >= 30
+      ? indicesAligned(a, b)
+      : { aligned: false, dir: "range" as StructTrend };
+    this.alignCache = { at: now, tf: this.opts.timeframe, ...res };
+    return res;
+  }
+
   status(): EngineStatus {
     return {
       running: this.running,
@@ -230,6 +284,9 @@ export class BackgroundEngine {
       closedToday: this.rm.state.dayTrades,
       risk: this.rm.status(),
       error: this.error,
+      indexAligned: this.indexAligned,
+      indexAlignDir: this.indexAlignDir,
+      ltfConfirmed: this.ltfConfirmed,
     };
   }
 

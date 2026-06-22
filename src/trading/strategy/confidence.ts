@@ -7,12 +7,14 @@ export interface ConfidenceInputs {
   cleanFVG: boolean; // clean fair value gap
   preferredSession: boolean; // London / NY open / NY PM
   rrOk: boolean; // RR >= target (1:2)
-  contextConfirms: boolean; // correlated context markets agree
+  contextConfirms: boolean; // correlated context markets agree (incl. index alignment)
   lowSpread: boolean; // low spread / clean volatility
   newsRisk: boolean; // high-impact news imminent
   badSpread: boolean; // spread too wide
   choppy: boolean; // choppy / ranging market
   noCorrelation: boolean; // unclear / conflicting context
+  ifvg?: boolean; // inverse-FVG flip confirming the reversal (TJR)
+  ltfConfirmed?: boolean; // lower-timeframe (1m) BOS confirmed the entry
 }
 
 export interface ConfidenceResult {
@@ -28,10 +30,12 @@ export function scoreSignal(p: ConfidenceInputs): ConfidenceResult {
 
   if (p.sweep) { score += 20; reasons.push("Liquidity Sweep (+20)"); }
   if (p.mss) { score += 20; reasons.push("Market Structure Shift (+20)"); }
+  if (p.ifvg) { score += 10; reasons.push("Inverse FVG Flip (+10)"); }
   if (p.cleanFVG) { score += 15; reasons.push("Sauberer FVG (+15)"); }
+  if (p.ltfConfirmed) { score += 10; reasons.push("1m-BOS bestätigt (+10)"); }
   if (p.preferredSession) { score += 15; reasons.push("Session passt (+15)"); }
   if (p.rrOk) { score += 10; reasons.push("RR ≥ 1:2 (+10)"); }
-  if (p.contextConfirms) { score += 10; reasons.push("Kontextmarkt bestätigt (+10)"); }
+  if (p.contextConfirms) { score += 10; reasons.push("Kontextmarkt/Indizes bestätigt (+10)"); }
   if (p.lowSpread) { score += 10; reasons.push("Niedriger Spread / saubere Volatilität (+10)"); }
 
   if (p.newsRisk) { score -= 20; warnings.push("News-Risiko (−20)"); }

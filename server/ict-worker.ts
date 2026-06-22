@@ -13,6 +13,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { analyze } from "../src/trading/strategy/StrategyEngine";
 import { MIN_SIGNAL_SCORE } from "../src/trading/strategy/confidence";
+import { indicesAligned, isIndexSymbol, type StructTrend } from "../src/trading/strategy/tjr";
 import { DEFAULT_RISK, type Candle, type MarketContext } from "../src/trading/types";
 // shared cloud-scanner utilities (plain ESM, bundled by esbuild)
 import { evaluateOpen, newSignal, hasConfluence, summarize, trimLog } from "./signal-journal.mjs";
@@ -101,14 +102,38 @@ const TRACK_FILE = "track-ict.json";
 const OTHER_TRACK = "track-box.json";
 const loadJson = (p: string, fb: any) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return fb; } };
 
+// Per-run candle memo so alignment + LTF + loop don't refetch the same series.
+const candleMemo = new Map<string, Promise<Candle[]>>();
+function fetchCandlesRes(epic: string, resolution: string): Promise<Candle[]> {
+  const key = `${epic}:${resolution}`;
+  let p = candleMemo.get(key);
+  if (!p) {
+    p = cap(`/api/v1/prices/${encodeURIComponent(epic)}?resolution=${resolution}&max=500`).then((d: any) =>
+      (d.prices || [])
+        .map((q: any) => ({
+          time: Math.floor(Date.parse(q.snapshotTimeUTC || q.snapshotTime) / 1000),
+          open: mid(q.openPrice), high: mid(q.highPrice), low: mid(q.lowPrice), close: mid(q.closePrice),
+        }))
+        .filter((c: Candle) => Number.isFinite(c.close))
+    );
+    candleMemo.set(key, p);
+  }
+  return p;
+}
 async function fetchCandles(epic: string): Promise<Candle[]> {
-  const d = await cap(`/api/v1/prices/${encodeURIComponent(epic)}?resolution=${RESOLUTION}&max=500`);
-  return (d.prices || [])
-    .map((p: any) => ({
-      time: Math.floor(Date.parse(p.snapshotTimeUTC || p.snapshotTime) / 1000),
-      open: mid(p.openPrice), high: mid(p.highPrice), low: mid(p.lowPrice), close: mid(p.closePrice),
-    }))
-    .filter((c: Candle) => Number.isFinite(c.close));
+  return fetchCandlesRes(epic, RESOLUTION);
+}
+
+// TJR index-alignment reference (US100 × US500) on the scan timeframe.
+async function computeAlignment(): Promise<{ aligned: boolean; dir: StructTrend } | null> {
+  try {
+    const [a, b] = await Promise.all([fetchCandles("US100"), fetchCandles("US500")]);
+    if (a.length < 30 || b.length < 30) return { aligned: false, dir: "range" };
+    return indicesAligned(a, b);
+  } catch (e) {
+    console.log(`[ict-worker] Alignment-Fetch fehlgeschlagen: ${(e as Error).message}`);
+    return null; // unknown → no gate (fail open rather than mute every index)
+  }
 }
 
 export async function runScan() {
@@ -128,21 +153,37 @@ export async function runScan() {
   const gate = tradingGate();
   if (!gate.ok) console.log(`[ict-worker] push-gate zu: ${gate.reason}`);
 
+  // index-alignment gate, computed once per run from US100 × US500
+  const align = await computeAlignment();
+  console.log(`[ict-worker] Index-Alignment US100×US500: ${align ? (align.aligned ? align.dir.toUpperCase() : "nicht aligned") : "unbekannt"}`);
+
   for (const epic of SYMBOLS) {
     try {
       const candles: Candle[] = await fetchCandles(epic);
       if (candles.length < 80) { console.log(`  · ${epic}: zu wenig Daten (${candles.length})`); continue; }
       if (isStale(candles[candles.length - 1].time, tfSeconds(TF))) { console.log(`  · ${epic}: Markt zu / Daten veraltet`); continue; }
 
-      const ctx: MarketContext = { symbol: epic, spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false };
-      const res = analyze(candles, ctx, DEFAULT_RISK);
+      const idx = isIndexSymbol(epic);
+      // multi-timeframe: 1-minute candles confirm the actual entry (1m BOS)
+      const ltf = TF !== "1m" ? await fetchCandlesRes(epic, "MINUTE").catch(() => [] as Candle[]) : undefined;
+      const ctx: MarketContext = {
+        symbol: epic,
+        spreadPct: 0.02,
+        newsRisk: false,
+        contextConfirms: idx && !!align?.aligned, // index alignment = context confirmation
+        choppy: false,
+        // gate active only when we actually know the alignment; fail open otherwise
+        indexAligned: idx ? (align ? align.aligned : undefined) : undefined,
+        indexAlignDir: idx ? align?.dir : undefined,
+      };
+      const res = analyze(candles, ctx, DEFAULT_RISK, undefined, ltf);
 
-      // only actionable setups: a full sweep→MSS→FVG plan, score ≥ 70
+      // only actionable setups: a full sweep→(BOS/IFVG)→(FVG/EQ) plan, score ≥ 70
       if (!res.signal || res.signal.confidence < MIN_SIGNAL_SCORE) {
         console.log(`  · ${epic}: ${res.stageLabel}`);
         continue;
       }
-      if (res.stage !== "ready" && res.stage !== "waiting_retrace") continue;
+      if (res.stage !== "ready" && res.stage !== "waiting_retrace" && res.stage !== "waiting_entry") continue;
       found++;
 
       const sig = res.signal;
@@ -153,7 +194,10 @@ export async function runScan() {
       const long = sig.direction === "BUY";
       const ndir = long ? "LONG" : "SHORT"; // normalised for cross-strategy confluence
       const conf = hasConfluence(epic, ndir, otherTrack);
-      const stageNote = res.stage === "ready" ? "Preis in FVG-Zone" : "Retrace abwarten";
+      const stageNote =
+        res.stage === "ready" ? "Entry bestätigt (1m-BOS)"
+        : res.stage === "waiting_entry" ? "Preis in Zone — 1m-BOS abwarten"
+        : "Retrace abwarten";
       const title = conf ? `ICT+Box: ${epic} ${sig.direction}` : `ICT: ${epic} ${sig.direction}`;
       const lines = [
         `${sig.confidence}/100 · RR 1:${sig.riskReward} · ${stageNote}`,

@@ -5,6 +5,7 @@ import { CapitalDataProvider } from "../data/CapitalDataProvider";
 import type { DataProvider } from "../data/DataProvider";
 import { DEFAULT_RISK, type PaperTrade, type RiskConfig } from "../types";
 import { runBacktest, type BacktestResult } from "../backtest/backtest";
+import { isIndexSymbol } from "../strategy/tjr";
 
 const LS_KEY = "gsp_trading_engine_v1";
 export type DataMode = "mock" | "capital";
@@ -126,10 +127,21 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     try {
       const provider = makeProvider(dataMode);
       const sym = symbolRef.current;
-      const candles = await provider.getCandles(sym, timeframeRef.current, 600);
+      const tf = timeframeRef.current;
+      const indexSym = isIndexSymbol(sym);
+      const candles = await provider.getCandles(sym, tf, 600);
+      const ltf = tf !== "1m" ? await provider.getCandles(sym, "1m", 1200) : undefined;
+      const us100 = indexSym ? await provider.getCandles("US100", tf, 600) : [];
+      const us500 = indexSym ? await provider.getCandles("US500", tf, 600) : [];
       // defer the heavy O(n²) pass so the UI thread can paint the spinner
       await new Promise((r) => setTimeout(r, 30));
-      setBacktest(runBacktest(candles, sym, risk));
+      setBacktest(
+        runBacktest(candles, sym, risk, undefined, {
+          ltf: ltf && ltf.length ? ltf : undefined,
+          indices: indexSym ? { us100, us500 } : undefined,
+          isIndex: indexSym,
+        })
+      );
     } finally {
       setBacktesting(false);
     }

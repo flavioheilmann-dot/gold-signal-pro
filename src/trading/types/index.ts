@@ -150,6 +150,8 @@ export interface MarketContext {
    * → no trade. undefined = not an index / unknown (no gate).
    */
   indexAligned?: boolean;
+  /** Direction the indices agree on ("up"/"down") when indexAligned is true. */
+  indexAlignDir?: "up" | "down" | "range";
 }
 
 export const TRADING_DISCLAIMER = "For education and paper trading only. Not financial advice.";

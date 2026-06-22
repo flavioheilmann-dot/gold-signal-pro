@@ -193,6 +193,21 @@ export function TradingDashboard({ defaultNtfyTopic = "" }: { defaultNtfyTopic?:
           </span>
           <span className="text-muted-foreground">Letzter Check: <span className="text-foreground">{ago(s.lastCheck)}</span></span>
           <span className="text-muted-foreground">Kerzen: <span className="text-foreground">{s.candleCount}</span></span>
+          {s.indexAligned !== null && (
+            <span className="text-muted-foreground">
+              Indizes:{" "}
+              <span className={s.indexAligned ? "text-up" : "text-down"}>
+                {s.indexAligned
+                  ? `aligned ${s.indexAlignDir === "up" ? "↑" : s.indexAlignDir === "down" ? "↓" : ""}`
+                  : "nicht aligned"}
+              </span>
+            </span>
+          )}
+          {s.ltfConfirmed !== null && (
+            <span className="text-muted-foreground">
+              1m-Entry: <span className={s.ltfConfirmed ? "text-up" : "text-gold"}>{s.ltfConfirmed ? "bestätigt" : "offen"}</span>
+            </span>
+          )}
           {s.error && <span className="text-down">⚠ {s.error}</span>}
         </div>
 

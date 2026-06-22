@@ -34,6 +34,43 @@ export function indicesAligned(a: Candle[], b: Candle[], k = 2): { aligned: bool
   return { aligned: false, dir: "range" };
 }
 
+/**
+ * Symbols the index-alignment gate applies to. TJR's rule is "don't trade
+ * indices unless NASDAQ (US100) and S&P (US500) agree" — the reference pair is
+ * always US100 × US500; the gate is applied to any equity index (a broad
+ * risk-on/risk-off tell). Aliases included for robustness across data feeds.
+ */
+export const INDEX_EPICS = new Set([
+  "US100", "US500", "US30", "US2000",
+  "DE40", "FR40", "UK100", "J225", "HK50", "EU50", "ES35", "NL25", "AUS200",
+  "NAS100", "SPX500", "SP500", "NASDAQ", "NDX", "SPX", "GER40", "DAX",
+]);
+export function isIndexSymbol(sym: string): boolean {
+  return INDEX_EPICS.has(sym.trim().toUpperCase());
+}
+
+/**
+ * Break of Structure on a (lower) timeframe in `dir`: price CLOSES through the
+ * most recent swing high (bullish) / low (bearish) within `lookback` candles.
+ * Used as the 1-minute entry trigger in the multi-timeframe model.
+ */
+export function recentBOS(candles: Candle[], dir: "bullish" | "bearish", k = 2, lookback = 30): boolean {
+  if (candles.length < 2 * k + 2) return false;
+  const piv = swingPivots(candles, k);
+  const last = candles.length - 1;
+  const from = Math.max(0, last - lookback);
+  if (dir === "bullish") {
+    const ref = piv.filter((p) => p.side === "high" && p.index >= from && p.index < last).pop();
+    if (!ref) return false;
+    for (let i = ref.index + 1; i <= last; i++) if (candles[i].close > ref.price) return true;
+    return false;
+  }
+  const ref = piv.filter((p) => p.side === "low" && p.index >= from && p.index < last).pop();
+  if (!ref) return false;
+  for (let i = ref.index + 1; i <= last; i++) if (candles[i].close < ref.price) return true;
+  return false;
+}
+
 /** 50% of a high/low range — TJR's equilibrium continuation level. */
 export function equilibrium(high: number, low: number): number {
   return (high + low) / 2;

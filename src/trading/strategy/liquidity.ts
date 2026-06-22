@@ -131,3 +131,23 @@ export function nearestLevel(
     Math.abs(l.price - price) < Math.abs(best.price - price) ? l : best
   );
 }
+
+/**
+ * Liquidity draws in the trade direction, ordered nearest → farthest from
+ * `price`. For a long these are highs above price (buy-side liquidity to draw
+ * into); for a short, lows below. These are the natural take-profit targets.
+ * Near-duplicate prices are collapsed so TP1 and TP2 land on distinct pools.
+ */
+export function drawsInDirection(levels: LiquidityLevel[], price: number, long: boolean): number[] {
+  const side: "high" | "low" = long ? "high" : "low";
+  const draws = levels
+    .filter((l) => l.side === side && (long ? l.price > price : l.price < price))
+    .map((l) => l.price)
+    .sort((a, b) => (long ? a - b : b - a)); // nearest first
+  const out: number[] = [];
+  for (const p of draws) {
+    if (out.length && Math.abs(p - out[out.length - 1]) / (price || 1) < 0.0004) continue;
+    out.push(p);
+  }
+  return out;
+}

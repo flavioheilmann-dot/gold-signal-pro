@@ -1,6 +1,7 @@
 import type { Candle, RiskConfig, MarketContext, PaperTrade } from "../types";
 import { analyze, DEFAULT_STRATEGY_OPTS, type StrategyOptions } from "../strategy/StrategyEngine";
 import { MIN_PAPER_SCORE } from "../strategy/confidence";
+import { indicesAligned } from "../strategy/tjr";
 import { RiskManager } from "../risk/RiskManager";
 import { PaperBroker } from "../paper/PaperBroker";
 
@@ -25,6 +26,26 @@ export interface BacktestResult {
 }
 
 /**
+ * Optional higher-fidelity inputs so the backtest exercises the SAME gates the
+ * live engine/scanner use:
+ *  • `ltf`     — 1-minute candles for the multi-timeframe entry (1m BOS).
+ *  • `indices` — US100 × US500 series; when `isIndex`, each bar is gated on
+ *                their alignment exactly like the live index-alignment filter.
+ * All optional → calling runBacktest(candles, sym, risk) behaves as before.
+ */
+export interface BacktestInputs {
+  ltf?: Candle[];
+  indices?: { us100: Candle[]; us500: Candle[] };
+  isIndex?: boolean;
+}
+
+/** Candles up to and including time `t` (series assumed time-ascending). */
+function sliceUpTo(arr: Candle[], t: number, ptr: { i: number }): Candle[] {
+  while (ptr.i < arr.length && arr[ptr.i].time <= t) ptr.i++;
+  return arr.slice(0, ptr.i);
+}
+
+/**
  * Walk the strategy over historical candles. At each bar we re-analyze the
  * window up to that bar; when a ≥75 "ready" setup appears (and risk allows
  * and no position is open) we open a paper trade, then step open trades with
@@ -37,11 +58,17 @@ export function runBacktest(
   candles: Candle[],
   symbol: string,
   risk: RiskConfig,
-  opts: StrategyOptions = DEFAULT_STRATEGY_OPTS
+  opts: StrategyOptions = DEFAULT_STRATEGY_OPTS,
+  inputs: BacktestInputs = {}
 ): BacktestResult {
   const rm = new RiskManager(risk);
   const paper = new PaperBroker();
   const equityCurve: EquityPoint[] = [{ time: candles[0]?.time ?? 0, equity: risk.accountStart }];
+
+  const step = candles.length > 1 ? candles[1].time - candles[0].time : 300;
+  const gateIndices = inputs.isIndex && inputs.indices;
+  // moving pointers so per-bar slicing stays cheap and monotonic
+  const pA = { i: 0 }, pB = { i: 0 }, pL = { i: 0 };
 
   for (let i = 60; i < candles.length; i++) {
     const bar = candles[i];
@@ -57,8 +84,26 @@ export function runBacktest(
     if (!ct.ok) continue;
 
     const window = candles.slice(0, i + 1);
-    const ctx: MarketContext = { symbol, spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false };
-    const res = analyze(window, ctx, risk, opts);
+
+    // index-alignment gate (US100 × US500) up to this bar's time
+    let indexAligned: boolean | undefined;
+    let aligned = false;
+    if (gateIndices) {
+      const a = sliceUpTo(inputs.indices!.us100, bar.time, pA);
+      const b = sliceUpTo(inputs.indices!.us500, bar.time, pB);
+      const al = a.length >= 30 && b.length >= 30 ? indicesAligned(a, b) : { aligned: false };
+      aligned = al.aligned;
+      indexAligned = aligned;
+    }
+
+    // 1m candles up to this bar's close for the MTF entry trigger
+    const ltf = inputs.ltf ? sliceUpTo(inputs.ltf, bar.time + step, pL) : undefined;
+
+    const ctx: MarketContext = {
+      symbol, spreadPct: 0.02, newsRisk: false,
+      contextConfirms: aligned, choppy: false, indexAligned,
+    };
+    const res = analyze(window, ctx, risk, opts, ltf);
     if (res.stage === "ready" && res.signal && res.signal.confidence >= MIN_PAPER_SCORE) {
       const v = rm.validateSignal(res.signal);
       if (!v.ok) continue;

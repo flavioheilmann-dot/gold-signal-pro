@@ -7,7 +7,8 @@ import { PaperBroker } from "./paper/PaperBroker";
 import { analyze } from "./strategy/StrategyEngine";
 import { MockDataProvider } from "./data/MockDataProvider";
 import { runBacktest } from "./backtest/backtest";
-import { structureTrend, indicesAligned, equilibrium, detectInverseFVGs } from "./strategy/tjr";
+import { structureTrend, indicesAligned, equilibrium, detectInverseFVGs, recentBOS, isIndexSymbol } from "./strategy/tjr";
+import { drawsInDirection } from "./strategy/liquidity";
 import { DEFAULT_RISK, type Candle, type LiquidityLevel, type TradeSignal } from "./types";
 
 let pass = 0, fail = 0;
@@ -104,8 +105,13 @@ const C = (o: number, h: number, l: number, cl: number, t = 0): Candle => ({ tim
   console.log("E2E:");
   const candles = new MockDataProvider(7, 2400).generate("GOLD", "5m", 300);
   const res = analyze(candles, { symbol: "GOLD", spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false }, DEFAULT_RISK);
-  check("analyze returns a known stage", ["no_data", "waiting_sweep", "waiting_mss", "waiting_fvg", "waiting_retrace", "ready"].includes(res.stage), res.stage);
+  check("analyze returns a known stage", ["no_data", "waiting_sweep", "waiting_mss", "waiting_fvg", "waiting_retrace", "waiting_entry", "ready"].includes(res.stage), res.stage);
   check("levels detected", res.levels.length > 0, res.levels.length);
+  // MTF: supplying 1m candles makes ltfConfirmed concrete (not null); none → null
+  const ltf = new MockDataProvider(7, 2400).generate("GOLD", "1m", 600);
+  const resMtf = analyze(candles, { symbol: "GOLD", spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false }, DEFAULT_RISK, undefined, ltf);
+  check("HTF-only → ltfConfirmed null", res.ltfConfirmed === null, res.ltfConfirmed);
+  check("MTF run does not throw, known stage", ["no_data","waiting_sweep","waiting_mss","waiting_fvg","waiting_retrace","waiting_entry","ready"].includes(resMtf.stage), resMtf.stage);
   const bt = runBacktest(candles, "GOLD", DEFAULT_RISK);
   check("backtest returns numeric trades", typeof bt.trades === "number" && bt.equityCurve.length >= 1, bt.trades);
   check("winRate in [0,1]", bt.winRate >= 0 && bt.winRate <= 1, bt.winRate);
@@ -128,6 +134,26 @@ const C = (o: number, h: number, l: number, cl: number, t = 0): Candle => ({ tim
   check("equilibrium(110,90)=100", equilibrium(110, 90) === 100, equilibrium(110, 90));
   const ifvg = detectInverseFVGs([Z(10, 5), Z(13, 9), Z(15, 12), { time: 0, open: 11, high: 12, low: 8, close: 9 }]);
   check("inverse FVG bearish @10", ifvg[0]?.dir === "bearish" && ifvg[0]?.level === 10, ifvg[0]);
+
+  // recentBOS — close-through of the most recent swing (1m entry trigger)
+  const bos = [Z(102, 100), Z(105, 103), Z(103, 101), Z(101, 99), Z(108, 106)];
+  check("recentBOS bullish (close 107 > swing high 105)", recentBOS(bos, "bullish", 1) === true, recentBOS(bos, "bullish", 1));
+  check("recentBOS bearish false here", recentBOS(bos, "bearish", 1) === false, recentBOS(bos, "bearish", 1));
+
+  // isIndexSymbol — gate scope (trim + case-insensitive)
+  check("isIndexSymbol US100/us500/' DE40 '", isIndexSymbol("US100") && isIndexSymbol("us500") && isIndexSymbol(" DE40 "), true);
+  check("isIndexSymbol GOLD false", isIndexSymbol("GOLD") === false, isIndexSymbol("GOLD"));
+
+  // drawsInDirection — TP targets nearest→farthest, near-dupes collapsed
+  const lv: LiquidityLevel[] = [
+    { kind: "swing_high", side: "high", price: 110, index: 0, label: "" },
+    { kind: "swing_high", side: "high", price: 115, index: 0, label: "" },
+    { kind: "equal_high", side: "high", price: 110.02, index: 0, label: "" },
+    { kind: "swing_low", side: "low", price: 90, index: 0, label: "" },
+  ];
+  const dr = drawsInDirection(lv, 100, true);
+  check("draws long = [110,115] (110.02 deduped)", dr.length === 2 && dr[0] === 110 && dr[1] === 115, dr);
+  check("draws short below 100 = [90]", JSON.stringify(drawsInDirection(lv, 100, false)) === "[90]", drawsInDirection(lv, 100, false));
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
