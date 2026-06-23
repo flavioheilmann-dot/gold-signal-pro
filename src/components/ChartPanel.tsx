@@ -14,7 +14,8 @@ import { detectFVGs } from "@/trading/strategy/fvg";
 import { detectLiquidityLevels } from "@/trading/strategy/liquidity";
 import { findRecentSweep } from "@/trading/strategy/sweep";
 import { detectStructureShift } from "@/trading/strategy/structure";
-import { latestSessionRanges } from "@/trading/strategy/sessions";
+import { latestSessionRanges, previousDayRange } from "@/trading/strategy/sessions";
+import { detectInverseFVGs, equilibrium } from "@/trading/strategy/tjr";
 
 export interface ChartLevels {
   direction: "long" | "short";
@@ -24,11 +25,22 @@ export interface ChartLevels {
   takeProfit2: number;
 }
 
+/** Strategy overlay layers the user can toggle to keep the chart readable. */
+export interface ChartLayers {
+  sessions: boolean; // Asia / London / NY session highs & lows
+  daily: boolean; // previous day high / low (PDH/PDL)
+  pools: boolean; // equal highs / lows (resting liquidity pools)
+  setup: boolean; // FVG, IFVG, sweep, MSS, equilibrium, Entry/SL/TP
+}
+
+export const DEFAULT_LAYERS: ChartLayers = { sessions: true, daily: true, pools: true, setup: true };
+
 interface Props {
   candles: Candle[];
   theme: "dark" | "light";
   livePrice?: number;
   levels?: ChartLevels | null;
+  layers?: ChartLayers;
   /** Changing this resets the zoom/pan (fit to content); same value preserves it. */
   symbol?: string;
 }
@@ -50,7 +62,7 @@ function emaSeries(candles: Candle[], period: number): LineData[] {
 // ICT day-trading candlestick chart, zoomable/pannable. Draws the ICT context
 // directly on it: filled Fair-Value-Gap boxes, the most recent liquidity sweep
 // marker, the market-structure-shift line, EMA21 and the active Entry/SL/TP.
-export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props) {
+export function ChartPanel({ candles, theme, livePrice, levels, layers = DEFAULT_LAYERS, symbol }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -147,47 +159,92 @@ export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props)
     candle.setData(candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close })));
     emaRef.current?.setData(emaSeries(candles, 21));
 
-    // ── ICT context: nearest unfilled FVGs, latest sweep + structure shift ──
     const last = candles[candles.length - 1]?.close ?? 0;
-    fvgsRef.current = detectFVGs(candles)
-      .filter((f) => !f.filled)
-      .sort((a, b) => Math.abs(a.mid - last) - Math.abs(b.mid - last))
-      .slice(0, 4)
-      .map((f) => ({ dir: f.dir, top: f.top, bottom: f.bottom, time: candles[f.index]?.time ?? last }));
-
     const liq = detectLiquidityLevels(candles);
     const sweep = findRecentSweep(candles, liq, 14);
     const mss = sweep ? detectStructureShift(candles, sweep.index, sweep.dir) : null;
 
-    // Asia session range — the key TJR liquidity that London/NY sweep
+    // nearest unfilled FVGs (boxes) — part of the "setup" layer
+    fvgsRef.current = layers.setup
+      ? detectFVGs(candles)
+          .filter((f) => !f.filled)
+          .sort((a, b) => Math.abs(a.mid - last) - Math.abs(b.mid - last))
+          .slice(0, 4)
+          .map((f) => ({ dir: f.dir, top: f.top, bottom: f.bottom, time: candles[f.index]?.time ?? last }))
+      : [];
+
+    // Asia range zone (band) — part of the "sessions" layer
     const asia = latestSessionRanges(candles).find((r) => r.session === "asia");
-    asiaRef.current = asia ? { high: asia.high, low: asia.low } : null;
+    asiaRef.current = layers.sessions && asia ? { high: asia.high, low: asia.low } : null;
 
     const markers: SeriesMarker<Time>[] = [];
-    if (sweep) {
+    if (layers.setup && sweep) {
       const swc = candles[sweep.index];
       if (swc) markers.push({ time: swc.time as Time, position: sweep.dir === "bullish" ? "belowBar" : "aboveBar", color: "#f0b429", shape: "circle", text: "SWEEP" });
     }
     candle.setMarkers(markers);
 
-    // dynamic price lines: Entry / SL / TP1 / TP2 + MSS
+    // ── dynamic price lines, grouped into toggleable layers ──
     for (const pl of dynLinesRef.current) candle.removePriceLine(pl);
     dynLinesRef.current = [];
-    if (levels) {
-      const add = (price: number, color: string, title: string, style = 0) =>
-        dynLinesRef.current.push(candle.createPriceLine({ price, color, lineWidth: 1, lineStyle: style as 0, axisLabelVisible: true, title }));
-      add(levels.entry, "rgba(240,180,41,0.95)", "Entry");
-      add(levels.stopLoss, "rgba(255,61,90,0.95)", "SL");
-      add(levels.takeProfit1, "rgba(16,224,144,0.9)", "TP1", 2);
-      add(levels.takeProfit2, "rgba(16,224,144,0.95)", "TP2");
+    const addLine = (
+      price: number, color: string, title: string,
+      o: { style?: number; label?: boolean } = {}
+    ) => dynLinesRef.current.push(candle.createPriceLine({
+      price, color, lineWidth: 1, lineStyle: (o.style ?? 2) as 0,
+      axisLabelVisible: o.label ?? true, title,
+    }));
+
+    // Sessions: Asia / London / NY highs & lows (the liquidity London/NY sweep)
+    if (layers.sessions) {
+      const SESS: Record<string, [string, string]> = {
+        asia: ["Asia", "rgba(34,211,238,0.9)"],
+        london: ["London", "rgba(251,146,60,0.85)"],
+        newyork_am: ["NY", "rgba(244,114,182,0.85)"],
+        newyork_pm: ["NY-PM", "rgba(244,114,182,0.55)"],
+      };
+      for (const r of latestSessionRanges(candles)) {
+        const meta = SESS[r.session];
+        if (!meta) continue;
+        addLine(r.high, meta[1], `${meta[0]} H`);
+        addLine(r.low, meta[1], `${meta[0]} L`);
+      }
     }
-    if (mss) {
-      dynLinesRef.current.push(candle.createPriceLine({ price: mss.brokenLevel, color: "rgba(168,130,255,0.9)", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "MSS" }));
+
+    // Daily draws: previous day high / low
+    if (layers.daily) {
+      const pd = previousDayRange(candles);
+      if (pd) {
+        addLine(pd.high, "rgba(203,213,225,0.75)", "PDH");
+        addLine(pd.low, "rgba(203,213,225,0.75)", "PDL");
+      }
     }
-    // Asia high/low liquidity lines
-    if (asia) {
-      dynLinesRef.current.push(candle.createPriceLine({ price: asia.high, color: "rgba(34,211,238,0.9)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "Asia H" }));
-      dynLinesRef.current.push(candle.createPriceLine({ price: asia.low, color: "rgba(34,211,238,0.9)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "Asia L" }));
+
+    // Liquidity pools: the nearest equal highs / lows (resting stops)
+    if (layers.pools) {
+      liq
+        .filter((l) => l.kind === "equal_high" || l.kind === "equal_low")
+        .sort((a, b) => Math.abs(a.price - last) - Math.abs(b.price - last))
+        .slice(0, 4)
+        .forEach((l) => addLine(l.price, "rgba(148,163,184,0.5)", l.side === "high" ? "EQH" : "EQL", { label: false }));
+    }
+
+    // Setup: MSS, IFVG flip, equilibrium (50%), and the active Entry/SL/TP
+    if (layers.setup) {
+      if (mss) addLine(mss.brokenLevel, "rgba(168,130,255,0.9)", "MSS", { style: 1 });
+      const ifvg = detectInverseFVGs(candles).pop();
+      if (ifvg) addLine(ifvg.level, "rgba(196,132,252,0.9)", "IFVG", { style: 1 });
+      if (sweep) {
+        const segc = candles.slice(sweep.index);
+        const eq = equilibrium(Math.max(...segc.map((c) => c.high)), Math.min(...segc.map((c) => c.low)));
+        addLine(eq, "rgba(240,180,41,0.5)", "EQ 50%", { style: 3, label: false });
+      }
+      if (levels) {
+        addLine(levels.entry, "rgba(240,180,41,0.95)", "Entry", { style: 0 });
+        addLine(levels.stopLoss, "rgba(255,61,90,0.95)", "SL", { style: 0 });
+        addLine(levels.takeProfit1, "rgba(16,224,144,0.9)", "TP1", { style: 2 });
+        addLine(levels.takeProfit2, "rgba(16,224,144,0.95)", "TP2", { style: 0 });
+      }
     }
 
     // fit the view only on first load or when the instrument changes — otherwise
@@ -197,7 +254,7 @@ export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props)
       chartRef.current?.timeScale().fitContent();
     }
     requestAnimationFrame(drawOverlay);
-  }, [candles, levels, symbol]);
+  }, [candles, levels, symbol, layers]);
 
   // live price → grow the forming candle + keep FVG boxes aligned
   useEffect(() => {

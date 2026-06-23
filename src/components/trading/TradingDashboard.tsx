@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTradingEngine } from "@/trading/engine/useTradingEngine";
 import { TJR_ASSETS } from "@/lib/assets";
-import { ChartPanel, type ChartLevels } from "@/components/ChartPanel";
+import { ChartPanel, type ChartLevels, type ChartLayers, DEFAULT_LAYERS } from "@/components/ChartPanel";
 import { requestNotifyPermission } from "@/trading/notifications/notify";
 import { liveTradingEnabled } from "@/trading/broker/BrokerAdapter";
 import type { EngineStatus } from "@/trading/engine/BackgroundEngine";
@@ -96,6 +96,7 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
   const [notifyOn, setNotifyOn] = useState(false);
   const [autoPaper, setAutoPaper] = useState(true);
   const [chartBig, setChartBig] = useState(false);
+  const [layers, setLayers] = useState<ChartLayers>(DEFAULT_LAYERS);
 
   // keep status ticking for the "last check" relative time
   const [, force] = useState(0);
@@ -236,19 +237,43 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
               {chartBig ? <><Minimize2 className="h-3 w-3" /> kleiner</> : <><Maximize2 className="h-3 w-3" /> grösser</>}
             </button>
           </div>
+          {/* Strategie-Ebenen ein-/ausblenden (übersichtlich halten) */}
+          <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
+            {([["sessions", "Sessions"], ["daily", "PDH/PDL"], ["pools", "Pools"], ["setup", "Setup"]] as const).map(([k, lbl]) => (
+              <button
+                key={k}
+                onClick={() => setLayers((l) => ({ ...l, [k]: !l[k] }))}
+                title={`${lbl} ein-/ausblenden`}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider border transition-colors",
+                  layers[k] ? "border-primary/50 bg-primary/10 text-primary" : "border-border/50 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
           <div className={cn("w-full transition-[height]", chartBig ? "h-[78vh]" : "h-[300px]")}>
             {s.candles.length >= 20 ? (
-              <ChartPanel candles={s.candles} symbol={eng.symbol} theme={theme} levels={chartLevels} />
+              <ChartPanel candles={s.candles} symbol={eng.symbol} theme={theme} levels={chartLevels} layers={layers} />
             ) : (
               <div className="grid h-full w-full place-items-center text-[11px] text-muted-foreground">
                 {running ? "Lade Kerzen…" : "Engine starten für Chart"}
               </div>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-3 px-1 font-mono text-[9px] text-muted-foreground">
-            <span className="text-info">EMA21</span><span style={{ color: "rgba(34,211,238,0.95)" }}>Asia H/L</span>
-            <span className="text-up">FVG</span><span className="text-gold">Sweep</span>
-            <span style={{ color: "rgba(168,130,255,0.9)" }}>MSS</span><span>Entry/SL/TP</span>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 px-1 font-mono text-[9px] text-muted-foreground">
+            <span className="text-info">EMA21</span>
+            <span style={{ color: "rgba(34,211,238,0.95)" }}>Asia</span>
+            <span style={{ color: "rgba(251,146,60,0.95)" }}>London</span>
+            <span style={{ color: "rgba(244,114,182,0.95)" }}>NY</span>
+            <span style={{ color: "rgba(203,213,225,0.95)" }}>PDH/PDL</span>
+            <span style={{ color: "rgba(148,163,184,0.9)" }}>Equal H/L</span>
+            <span className="text-up">FVG</span>
+            <span className="text-gold">Sweep</span>
+            <span style={{ color: "rgba(168,130,255,0.95)" }}>MSS</span>
+            <span style={{ color: "rgba(196,132,252,0.95)" }}>IFVG</span>
+            <span style={{ color: "rgba(240,180,41,0.9)" }}>EQ/Entry/SL/TP</span>
             <span className="ml-auto">Mausrad = Zoom · Ziehen = Pan</span>
           </div>
         </div>
