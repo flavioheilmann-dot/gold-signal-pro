@@ -1,18 +1,13 @@
 //@version=5
 // ─────────────────────────────────────────────────────────────────────────
 // GSP — Robust #1: Trendfolge (Long-only, Donchian-Breakout)
+//   >>> AUF DEM TAGESCHART (1D) NUTZEN <<<  (Indizes/ETFs: US500, US100, SPX…)
 //
-// Idee: Aufwärtstrends reiten, in Abwärtsphasen aussteigen. Managed-Futures-
-// /Turtle-Stil — die robusteste Kategorie in ehrlichen Langzeit-Backtests.
-//   • Nur Long, und nur wenn Kurs ÜBER der 200er-MA (Aufwärts-Regime).
-//   • Einstieg: Schluss bricht über das 50-Bar-Hoch (Breakout).
-//   • Ausstieg: Schluss unter das 20-Bar-Tief ODER Regimebruch (unter 200er-MA).
-//   • Schutz-Stop: ATR-basiert (begrenzt Gap-Risiko, bestimmt die Positionsgröße).
-//
-// EMPFEHLUNG: Tageschart (1D) auf Indizes/ETFs (US500, US100, SPX, NDX, DAX …).
-// EHRLICH TESTEN: Kosten in den "Properties" setzen; auf MEHREREN Indizes prüfen;
-//   Messlatte = die "Buy & hold return"-Zeile im Strategy-Tester SCHLAGEN
-//   (nach Kosten, mit kleinerem Drawdown). Keine Garantie, kein Geldautomat.
+// Aufwärtstrends reiten, in Abwärtsphasen aussteigen (Turtle-/Managed-Futures-
+// Stil). Nur Long über der 200er-MA, Einstieg auf 50-Bar-Breakout, Ausstieg auf
+// 20-Bar-Tief oder Regimebruch, ATR-Schutzstop. Größe = % des Kapitals (sicher).
+// Messlatte: die "Buy & hold return"-Zeile im Strategy-Tester schlagen
+// (nach Kosten / kleinerer Drawdown). Keine Garantie.
 // ─────────────────────────────────────────────────────────────────────────
 strategy("GSP — Trendfolge (Long-only)", overlay=true, initial_capital=10000,
      default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0,
@@ -24,30 +19,28 @@ entryLen  = input.int(50,  "Breakout: Hoch der letzten N Bars", minval=5)
 exitLen   = input.int(20,  "Exit: Tief der letzten N Bars", minval=3)
 atrLen    = input.int(14,  "ATR-Länge", minval=2)
 atrMult   = input.float(2.0, "ATR-Schutzstop-Faktor", minval=0.5, step=0.1)
-riskPct   = input.float(1.0, "Risiko % pro Trade", minval=0.1, step=0.1) / 100.0
 
 sma  = ta.sma(close, regimeLen)
 atr  = ta.atr(atrLen)
-hiBO = ta.highest(close, entryLen)[1] // Breakout-Level (Vorperiode, kein Look-ahead)
-loEX = ta.lowest(low, exitLen)[1]     // Exit-Level
+hiBO = ta.highest(close, entryLen)[1]
+loEX = ta.lowest(low, exitLen)[1]
 bull = close > sma
 
-longEntry = bull and close > hiBO and strategy.position_size == 0
+longEntry = bull and not na(hiBO) and close > hiBO and not na(atr) and strategy.position_size == 0
 
 var float entryStop = na
 if longEntry
-    stopDist = atrMult * atr
-    if stopDist > 0
-        strategy.entry("Long", strategy.long, qty=(strategy.equity * riskPct) / stopDist)
-        entryStop := close - stopDist
+    strategy.entry("Long", strategy.long) // Größe = default_qty (100 % des Kapitals)
+    entryStop := close - atrMult * atr
 
 if strategy.position_size > 0
-    strategy.exit("protect", "Long", stop=entryStop) // ATR-Schutzstop
+    if not na(entryStop)
+        strategy.exit("protect", "Long", stop=entryStop) // ATR-Schutzstop
     if close < loEX or not bull
         strategy.close("Long", comment="Trend-Exit")
 else
     entryStop := na
 
-plot(sma,  "Regime-MA (200)", color=color.new(color.gray, 0))
+plot(sma, "Regime-MA (200)", color=color.new(color.gray, 0))
 plot(strategy.position_size > 0 ? entryStop : na, "Schutz-Stop", color=color.new(color.red, 0), style=plot.style_linebr)
 bgcolor(bull ? color.new(color.green, 94) : color.new(color.red, 94), title="Regime")
