@@ -1,0 +1,91 @@
+//@version=5
+// ─────────────────────────────────────────────────────────────────────────
+// GSP — NY Opening-Range-Breakout (Displacement + Session-Bias)
+//   >>> 5-MINUTEN-CHART NUTZEN <<<  (Strategie aus dem "Pat"-ORB-Video)
+//
+// Mechanisierter Kern:
+//   • NY Opening Range = Hoch/Tief der ersten 15 Min (09:30–09:45 ET).
+//   • Long: 5m-Kerze SCHLIESST über OR-Hoch mit "Displacement" (großer Body).
+//     Short spiegelbildlich unter OR-Tief.
+//   • Stop hinter dem OR (gegenüberliegende Seite). Ziel = R:R (Default 1,5).
+//   • 1 Trade/Tag, nur im NY-Fenster, Glattstellung zum Session-Ende.
+//   • Session-Bias (Step 2): optional nur Long wenn London bärisch war (NY-
+//     Reversal nach oben) bzw. nur Short wenn London bullisch war.
+//
+// EHRLICH: Intraday 5m → KOSTEN sind entscheidend (in "Properties" setzen!).
+//   Die 79%-Winrate ist Marketing. Diskretionäre Teile (Engulfing, Demand-Retest)
+//   sind NICHT automatisiert → weicht vom Video ab. Vergleiche mit der bereits
+//   bewährten Trendfolge (PF 1,4–3,6) und mit "Buy & hold". Erst testen, dann glauben.
+// ─────────────────────────────────────────────────────────────────────────
+strategy("GSP — NY ORB (Displacement)", overlay=true, initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0,
+     calc_on_every_tick=false, commission_type=strategy.commission.percent,
+     commission_value=0.0, slippage=0)
+
+tz       = "America/New_York"
+orSess   = input.session("0930-0945", "NY Opening Range (ET)")
+trSess   = input.session("0945-1600", "Handelsfenster NY (ET)")
+lonSess  = input.session("0300-0800", "London-Session (ET, für Bias)")
+allowShort = input.bool(true, "Shorts erlauben")
+useBias  = input.bool(true, "Session-Bias: NY gegen London")
+atrLen   = input.int(14, "ATR-Länge", minval=2)
+bodyMult = input.float(0.5, "Displacement: Kerzen-Body ≥ x·ATR", minval=0.0, step=0.1)
+rr       = input.float(1.5, "Risk:Reward (Ziel)", minval=0.5, step=0.1)
+
+atr  = ta.atr(atrLen)
+isOR = not na(time(timeframe.period, orSess, tz))
+isTR = not na(time(timeframe.period, trSess, tz))
+isLON= not na(time(timeframe.period, lonSess, tz))
+
+// ── Opening Range + 1-Trade-pro-Tag-Reset ──
+var float orHigh = na
+var float orLow  = na
+var bool  tookToday = false
+if isOR and not isOR[1]
+    orHigh := high
+    orLow  := low
+    tookToday := false
+else if isOR
+    orHigh := math.max(orHigh, high)
+    orLow  := math.min(orLow, low)
+
+// ── London-Richtung für den Bias ──
+var float lonOpen  = na
+var float lonClose = na
+var int   lonDir   = 0
+if isLON and not isLON[1]
+    lonOpen := open
+if isLON
+    lonClose := close
+if isLON[1] and not isLON
+    lonDir := lonClose > lonOpen ? 1 : -1
+
+longBiasOK  = not useBias or lonDir == -1 // London bärisch → NY bullisch
+shortBiasOK = not useBias or lonDir == 1
+
+bodyOk   = math.abs(close - open) >= bodyMult * atr
+canTrade = isTR and not na(orHigh) and not na(orLow) and not tookToday and not na(atr)
+longSig  = canTrade and close > orHigh and bodyOk and longBiasOK
+shortSig = allowShort and canTrade and close < orLow and bodyOk and shortBiasOK
+
+if longSig and strategy.position_size == 0
+    risk = close - orLow
+    if risk > 0
+        strategy.entry("Long", strategy.long)
+        strategy.exit("xL", "Long", stop=orLow, limit=close + rr * risk)
+        tookToday := true
+if shortSig and strategy.position_size == 0
+    risk = orHigh - close
+    if risk > 0
+        strategy.entry("Short", strategy.short)
+        strategy.exit("xS", "Short", stop=orHigh, limit=close - rr * risk)
+        tookToday := true
+
+// Glattstellen zum NY-Session-Ende (kein Overnight)
+if isTR[1] and not isTR and strategy.position_size != 0
+    strategy.close_all(comment="Session-Ende")
+
+// Visuals
+plot(isTR ? orHigh : na, "OR High", color=color.new(color.teal, 0), style=plot.style_linebr, linewidth=1)
+plot(isTR ? orLow  : na, "OR Low",  color=color.new(color.red, 0),  style=plot.style_linebr, linewidth=1)
+bgcolor(isOR ? color.new(color.blue, 88) : na, title="Opening Range")
