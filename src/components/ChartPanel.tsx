@@ -47,6 +47,15 @@ interface Props {
 
 interface FvgBox { dir: "bullish" | "bearish"; top: number; bottom: number; time: number }
 
+// Candle times are UTC unix seconds; render them in the user's LOCAL timezone
+// so the axis matches their wall clock (lightweight-charts defaults to UTC).
+const fmtLocalTime = (t: Time): string =>
+  typeof t === "number" ? new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+const fmtLocalDate = (t: Time): string =>
+  typeof t === "number" ? new Date(t * 1000).toLocaleDateString([], { day: "2-digit", month: "2-digit" }) : "";
+const fmtLocalDateTime = (t: Time): string =>
+  typeof t === "number" ? new Date(t * 1000).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+
 /** Simple EMA over closes, null until the period fills. */
 function emaSeries(candles: Candle[], period: number): LineData[] {
   const k = 2 / (period + 1);
@@ -120,7 +129,13 @@ export function ChartPanel({ candles, theme, livePrice, levels, layers = DEFAULT
       },
       grid: { vertLines: { visible: false }, horzLines: { color: "rgba(148,163,184,0.05)" } },
       rightPriceScale: { borderColor: "rgba(148,163,184,0.1)" },
-      timeScale: { borderColor: "rgba(148,163,184,0.1)", timeVisible: true, secondsVisible: false },
+      localization: { timeFormatter: fmtLocalDateTime }, // crosshair label in local time
+      timeScale: {
+        borderColor: "rgba(148,163,184,0.1)",
+        timeVisible: true,
+        secondsVisible: false,
+        tickMarkFormatter: (t: Time, tickType: number) => (tickType <= 2 ? fmtLocalDate(t) : fmtLocalTime(t)),
+      },
       crosshair: { mode: 1 },
       // zoom + pan enabled (wheel, pinch, drag)
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true },

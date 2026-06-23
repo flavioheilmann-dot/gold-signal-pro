@@ -84,6 +84,14 @@ function toAscii(s: string): string {
   // decompose accents, then drop everything non-ASCII (incl. combining marks)
   return s.normalize("NFKD").replace(/[^\x00-\x7F]/g, "");
 }
+// Capital's snapshotTimeUTC has no zone designator → force UTC so candles
+// aren't shifted by the local TZ offset (matters when run off a UTC machine).
+function tsUTC(s: string): number {
+  if (!s) return NaN;
+  let v = String(s).trim().replace(/\//g, "-").replace(" ", "T");
+  if (!/[zZ]|[+-]\d\d:?\d\d$/.test(v)) v += "Z";
+  return Date.parse(v);
+}
 
 // ── Cooldown cache (persisted across runs via GitHub Actions cache) ──
 const CACHE_FILE = ".ict-cache.json";
@@ -112,7 +120,7 @@ function fetchCandlesRes(epic: string, resolution: string): Promise<Candle[]> {
     p = cap(`/api/v1/prices/${encodeURIComponent(epic)}?resolution=${resolution}&max=500`).then((d: any) =>
       (d.prices || [])
         .map((q: any) => ({
-          time: Math.floor(Date.parse(q.snapshotTimeUTC || q.snapshotTime) / 1000),
+          time: Math.floor(tsUTC(q.snapshotTimeUTC || q.snapshotTime) / 1000),
           open: mid(q.openPrice), high: mid(q.highPrice), low: mid(q.lowPrice), close: mid(q.closePrice),
         }))
         .filter((c: Candle) => Number.isFinite(c.close))

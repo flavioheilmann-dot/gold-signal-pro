@@ -160,6 +160,17 @@ function mid(x) {
   return b ?? a ?? NaN;
 }
 
+// Capital's snapshotTimeUTC carries a UTC value but NO zone designator
+// ("2026-06-23T06:45:00"). Plain Date.parse() treats that as the server's
+// LOCAL time, so on a UTC+2 box every candle is shifted 2h into the past
+// (stale chart + wrong session windows). Force UTC parsing.
+function tsUTC(s) {
+  if (!s) return NaN;
+  let v = String(s).trim().replace(/\//g, "-").replace(" ", "T");
+  if (!/[zZ]|[+-]\d\d:?\d\d$/.test(v)) v += "Z";
+  return Date.parse(v);
+}
+
 // Real Capital.com OHLC candles for any instrument (epic).
 app.get("/api/capital/candles/:epic", async (req, res) => {
   try {
@@ -171,7 +182,7 @@ app.get("/api/capital/candles/:epic", async (req, res) => {
     );
     const candles = (d.prices || [])
       .map((p) => ({
-        time: Math.floor(Date.parse(p.snapshotTimeUTC || p.snapshotTime) / 1000),
+        time: Math.floor(tsUTC(p.snapshotTimeUTC || p.snapshotTime) / 1000),
         open: mid(p.openPrice),
         high: mid(p.highPrice),
         low: mid(p.lowPrice),
