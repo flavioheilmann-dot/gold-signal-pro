@@ -8,6 +8,7 @@ import { runBacktest, type BacktestResult } from "../backtest/backtest";
 import { isIndexSymbol } from "../strategy/tjr";
 
 const LS_KEY = "gsp_trading_engine_v1";
+const AUTORUN_KEY = "gsp_engine_autorun_v1";
 export type DataMode = "mock" | "capital";
 
 function makeProvider(mode: DataMode): DataProvider {
@@ -69,13 +70,20 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     [risk]
   );
 
+  // auto-run preference: the engine should run continuously by default ("die
+  // Daten durchgehend laufen lassen"). Persisted so an explicit Stop survives a
+  // reload, but a fresh install / cleared storage defaults to ON.
+  const autorun = () => localStorage.getItem(AUTORUN_KEY) !== "0";
+  const setAutorun = (on: boolean) => localStorage.setItem(AUTORUN_KEY, on ? "1" : "0");
+
   useEffect(() => {
     const eng = build("capital");
+    if (autorun()) eng.start(); // start immediately so data flows without a manual click
     return () => eng.stop();
   }, [build]);
 
-  const start = useCallback(() => engineRef.current?.start(), []);
-  const stop = useCallback(() => engineRef.current?.stop(), []);
+  const start = useCallback(() => { setAutorun(true); engineRef.current?.start(); }, []);
+  const stop = useCallback(() => { setAutorun(false); engineRef.current?.stop(); }, []);
 
   const setOptions = useCallback((opts: Partial<EngineOptions>) => {
     engineRef.current?.setOptions(opts);
@@ -108,7 +116,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
       engineRef.current?.stop();
       const eng = build(mode);
       setDataModeState(mode);
-      if (wasRunning) eng.start();
+      if (wasRunning || autorun()) eng.start();
     },
     [build]
   );
@@ -117,7 +125,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     engineRef.current?.stop();
     localStorage.removeItem(LS_KEY);
     const eng = build(dataMode);
-    void eng;
+    if (autorun()) eng.start(); // keep running after a reset
   }, [build, dataMode]);
 
   const runBacktestNow = useCallback(async () => {

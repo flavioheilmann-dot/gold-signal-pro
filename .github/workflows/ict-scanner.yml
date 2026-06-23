@@ -2,7 +2,7 @@ name: ICT Engine Scanner
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # every 15 minutes
+    - cron: '*/5 * * * *'  # every 5 minutes (durchgehende Abdeckung, Laptop egal)
   workflow_dispatch:
     inputs:
       timeframe:
