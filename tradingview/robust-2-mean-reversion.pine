@@ -1,0 +1,59 @@
+//@version=5
+// ─────────────────────────────────────────────────────────────────────────
+// GSP — Robust #2: Mean-Reversion (RSI(2)-Dip, Long-only)
+//
+// Idee: im Aufwärtstrend kurzfristige Rücksetzer kaufen (Connors-RSI(2)-Stil).
+//   • Nur Long, und nur wenn Kurs ÜBER der 200er-MA (Aufwärts-Regime).
+//   • Einstieg: RSI(2) unter 10 (überverkaufter Dip im Aufwärtstrend).
+//   • Ausstieg: Schluss über der 5er-MA (zurück zum Mittel) ODER Regimebruch
+//     ODER nach max. Haltedauer.
+//   • Schutz-Stop: ATR-basiert (begrenzt Crash-Risiko, bestimmt Positionsgröße).
+//
+// EMPFEHLUNG: Tageschart (1D) auf Indizes/ETFs (US500, US100, SPX, NDX …).
+//   Mean-Reversion hat HOHE Trefferquote, aber seltene große Verlierer in Crashs
+//   → Drawdown genau anschauen. Edge auf US-Indizes historisch real, aber
+//   abgeschwächt. EHRLICH TESTEN: Kosten setzen, mehrere Indizes, vs. Buy&Hold.
+//   Keine Garantie.
+// ─────────────────────────────────────────────────────────────────────────
+strategy("GSP — Mean-Reversion (Long-only)", overlay=true, initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0,
+     calc_on_every_tick=false, commission_type=strategy.commission.percent,
+     commission_value=0.0, slippage=0)
+
+regimeLen = input.int(200, "Regime-MA (nur Long darüber)", minval=20)
+rsiLen    = input.int(2,  "RSI-Länge", minval=1)
+buyTh     = input.float(10, "RSI Kauf-Schwelle (Einstieg <)", minval=1)
+exitMA    = input.int(5,  "Exit-MA (Schluss darüber)", minval=2)
+atrLen    = input.int(14, "ATR-Länge", minval=2)
+atrMult   = input.float(2.5, "ATR-Schutzstop-Faktor", minval=0.5, step=0.1)
+maxBars   = input.int(10, "Max. Haltedauer (Bars)", minval=1)
+riskPct   = input.float(1.0, "Risiko % pro Trade", minval=0.1, step=0.1) / 100.0
+
+sma   = ta.sma(close, regimeLen)
+rsi   = ta.rsi(close, rsiLen)
+maEx  = ta.sma(close, exitMA)
+atr   = ta.atr(atrLen)
+bull  = close > sma
+
+longEntry = bull and rsi < buyTh and strategy.position_size == 0
+
+var float entryStop = na
+var int   entryBar  = na
+if longEntry
+    stopDist = atrMult * atr
+    if stopDist > 0
+        strategy.entry("Long", strategy.long, qty=(strategy.equity * riskPct) / stopDist)
+        entryStop := close - stopDist
+        entryBar := bar_index
+
+if strategy.position_size > 0
+    strategy.exit("protect", "Long", stop=entryStop) // ATR-Schutzstop
+    timeUp = not na(entryBar) and (bar_index - entryBar) >= maxBars
+    if close > maEx or not bull or timeUp
+        strategy.close("Long", comment="MR-Exit")
+else
+    entryStop := na
+    entryBar := na
+
+plot(sma, "Regime-MA (200)", color=color.new(color.gray, 0))
+bgcolor(bull ? color.new(color.green, 94) : color.new(color.red, 94), title="Regime")
