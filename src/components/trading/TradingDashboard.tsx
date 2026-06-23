@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity, Play, Square, Cpu, ShieldAlert, Target, ListChecks, FlaskConical,
   TrendingUp, TrendingDown, AlertTriangle, Bell, Database, Maximize2, Minimize2, LineChart,
@@ -104,14 +104,20 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
     return () => clearInterval(id);
   }, []);
 
+  // memoised so the per-second "last check" re-render does NOT re-run the chart's
+  // heavy setData effect — it only changes when the signal actually changes.
+  const sig = s?.currentSignal ?? null;
+  const chartLevels = useMemo<ChartLevels | null>(
+    () => sig
+      ? { direction: sig.direction === "BUY" ? "long" : "short", entry: sig.entry, stopLoss: sig.stopLoss, takeProfit1: sig.takeProfit1, takeProfit2: sig.takeProfit2 }
+      : null,
+    [sig]
+  );
+
   if (!s) return <div className="skeleton h-40 w-full" />;
 
   const running = s.running;
   const live = liveTradingEnabled();
-  const sig = s.currentSignal;
-  const chartLevels: ChartLevels | null = sig
-    ? { direction: sig.direction === "BUY" ? "long" : "short", entry: sig.entry, stopLoss: sig.stopLoss, takeProfit1: sig.takeProfit1, takeProfit2: sig.takeProfit2 }
-    : null;
 
   const toggleNotify = async () => {
     const next = !notifyOn;
@@ -240,9 +246,10 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
             )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-3 px-1 font-mono text-[9px] text-muted-foreground">
-            <span className="text-info">EMA21</span><span className="text-up">FVG</span>
-            <span className="text-gold">Sweep</span><span style={{ color: "rgba(168,130,255,0.9)" }}>MSS</span>
-            <span>Entry/SL/TP</span><span className="ml-auto">Mausrad = Zoom · Ziehen = Pan</span>
+            <span className="text-info">EMA21</span><span style={{ color: "rgba(34,211,238,0.95)" }}>Asia H/L</span>
+            <span className="text-up">FVG</span><span className="text-gold">Sweep</span>
+            <span style={{ color: "rgba(168,130,255,0.9)" }}>MSS</span><span>Entry/SL/TP</span>
+            <span className="ml-auto">Mausrad = Zoom · Ziehen = Pan</span>
           </div>
         </div>
 

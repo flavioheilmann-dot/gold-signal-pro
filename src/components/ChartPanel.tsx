@@ -14,6 +14,7 @@ import { detectFVGs } from "@/trading/strategy/fvg";
 import { detectLiquidityLevels } from "@/trading/strategy/liquidity";
 import { findRecentSweep } from "@/trading/strategy/sweep";
 import { detectStructureShift } from "@/trading/strategy/structure";
+import { latestSessionRanges } from "@/trading/strategy/sessions";
 
 export interface ChartLevels {
   direction: "long" | "short";
@@ -57,6 +58,7 @@ export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props)
   const emaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const dynLinesRef = useRef<IPriceLine[]>([]);
   const fvgsRef = useRef<FvgBox[]>([]);
+  const asiaRef = useRef<{ high: number; low: number } | null>(null);
   const lastSymbolRef = useRef<string | undefined>(undefined);
 
   function drawOverlay() {
@@ -67,6 +69,16 @@ export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props)
     svg.setAttribute("width", String(el.clientWidth));
     svg.setAttribute("height", String(el.clientHeight));
     let html = "";
+    // Asia-Range-Zone (TJR: London/NY greifen die Asia-Liquidität ab)
+    if (asiaRef.current) {
+      const yH = candle.priceToCoordinate(asiaRef.current.high);
+      const yL = candle.priceToCoordinate(asiaRef.current.low);
+      if (yH != null && yL != null) {
+        const y = Math.min(yH, yL);
+        const h = Math.max(1, Math.abs(yL - yH));
+        html += `<rect x="0" y="${y.toFixed(1)}" width="${el.clientWidth}" height="${h.toFixed(1)}" fill="rgba(34,211,238,0.06)" stroke="none"/>`;
+      }
+    }
     for (const f of fvgsRef.current) {
       const x1 = ts.timeToCoordinate(f.time as Time);
       const yT = candle.priceToCoordinate(f.top);
@@ -120,7 +132,7 @@ export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props)
       ro.disconnect();
       chart.remove();
       chartRef.current = null; candleRef.current = null; emaRef.current = null;
-      dynLinesRef.current = []; fvgsRef.current = [];
+      dynLinesRef.current = []; fvgsRef.current = []; asiaRef.current = null;
     };
   }, []);
 
@@ -147,6 +159,10 @@ export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props)
     const sweep = findRecentSweep(candles, liq, 14);
     const mss = sweep ? detectStructureShift(candles, sweep.index, sweep.dir) : null;
 
+    // Asia session range — the key TJR liquidity that London/NY sweep
+    const asia = latestSessionRanges(candles).find((r) => r.session === "asia");
+    asiaRef.current = asia ? { high: asia.high, low: asia.low } : null;
+
     const markers: SeriesMarker<Time>[] = [];
     if (sweep) {
       const swc = candles[sweep.index];
@@ -167,6 +183,11 @@ export function ChartPanel({ candles, theme, livePrice, levels, symbol }: Props)
     }
     if (mss) {
       dynLinesRef.current.push(candle.createPriceLine({ price: mss.brokenLevel, color: "rgba(168,130,255,0.9)", lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: "MSS" }));
+    }
+    // Asia high/low liquidity lines
+    if (asia) {
+      dynLinesRef.current.push(candle.createPriceLine({ price: asia.high, color: "rgba(34,211,238,0.9)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "Asia H" }));
+      dynLinesRef.current.push(candle.createPriceLine({ price: asia.low, color: "rgba(34,211,238,0.9)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "Asia L" }));
     }
 
     // fit the view only on first load or when the instrument changes — otherwise
