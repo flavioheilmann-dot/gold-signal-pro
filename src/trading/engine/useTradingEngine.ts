@@ -3,10 +3,11 @@ import { BackgroundEngine, type EngineStatus, type EngineOptions, type Persisted
 import { MockDataProvider } from "../data/MockDataProvider";
 import { CapitalDataProvider } from "../data/CapitalDataProvider";
 import type { DataProvider } from "../data/DataProvider";
-import { DEFAULT_RISK, type PaperTrade, type RiskConfig } from "../types";
+import { DEFAULT_RISK, type ExitMode, type PaperTrade, type RiskConfig } from "../types";
 import { runBacktest, type BacktestResult } from "../backtest/backtest";
 import { DEFAULT_STRATEGY_OPTS } from "../strategy/StrategyEngine";
 import { isIndexSymbol } from "../strategy/tjr";
+import { profileFor } from "@/lib/assets";
 
 const LS_KEY = "gsp_trading_engine_v1";
 const AUTORUN_KEY = "gsp_engine_autorun_v1";
@@ -36,20 +37,24 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
   const [dataMode, setDataModeState] = useState<DataMode>("capital");
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [backtesting, setBacktesting] = useState(false);
-  // symbol + timeframe + poll cadence survive a data-source rebuild via refs
+  // symbol + timeframe + poll cadence survive a data-source rebuild via refs.
+  // Defaults = US100's TJR V2 profile (15m, session filter, long-only, trailing).
   const [symbol, setSymbolUi] = useState("US100");
-  const [timeframe, setTimeframeUi] = useState("5m");
+  const [timeframe, setTimeframeUi] = useState("15m");
   const [intervalMs, setIntervalUi] = useState(8000);
   const symbolRef = useRef("US100");
-  const timeframeRef = useRef("5m");
+  const timeframeRef = useRef("15m");
   const intervalRef = useRef(8000);
   // TJR V2 toggles (mirror EngineOptions; refs so the backtest can read them)
   const [longOnly, setLongOnlyUi] = useState(true);
-  const [htfBiasFilter, setHtfBiasUi] = useState(true);
-  const [requireKillzone, setKillzoneUi] = useState(false);
+  const [htfBiasFilter, setHtfBiasUi] = useState(false);
+  const [requireKillzone, setKillzoneUi] = useState(true);
+  const [exitMode, setExitModeUi] = useState<ExitMode>("trail");
   const longOnlyRef = useRef(true);
-  const htfBiasRef = useRef(true);
-  const killzoneRef = useRef(false);
+  const htfBiasRef = useRef(false);
+  const killzoneRef = useRef(true);
+  const exitModeRef = useRef<ExitMode>("trail");
+  const riskPctRef = useRef(1);
 
   // build the engine (once, and whenever the data source changes)
   const build = useCallback(
@@ -58,7 +63,11 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
       const eng = new BackgroundEngine(
         makeProvider(mode),
         risk,
-        { symbol: symbolRef.current, timeframe: timeframeRef.current, intervalMs: intervalRef.current },
+        {
+          symbol: symbolRef.current, timeframe: timeframeRef.current, intervalMs: intervalRef.current,
+          mode: "v1", exitMode: exitModeRef.current, longOnly: longOnlyRef.current,
+          htfBiasFilter: htfBiasRef.current, requireKillzone: killzoneRef.current, riskPct: riskPctRef.current,
+        },
         persisted
       );
       eng.onUpdate = (s) => {
@@ -101,7 +110,23 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
   const setSymbol = useCallback((sym: string) => {
     symbolRef.current = sym;
     setSymbolUi(sym);
-    engineRef.current?.setOptions({ symbol: sym });
+    const patch: Partial<EngineOptions> = { symbol: sym };
+    // apply the asset's TJR V2 profile (timeframe, session filter, long-only,
+    // exit style, per-trade risk) so each instrument trades as the video found best
+    const p = profileFor(sym);
+    if (p) {
+      timeframeRef.current = p.timeframe; setTimeframeUi(p.timeframe);
+      longOnlyRef.current = p.longOnly; setLongOnlyUi(p.longOnly);
+      killzoneRef.current = p.sessionFilter; setKillzoneUi(p.sessionFilter);
+      exitModeRef.current = p.exit; setExitModeUi(p.exit);
+      riskPctRef.current = p.riskPct;
+      patch.timeframe = p.timeframe;
+      patch.longOnly = p.longOnly;
+      patch.requireKillzone = p.sessionFilter;
+      patch.exitMode = p.exit;
+      patch.riskPct = p.riskPct;
+    }
+    engineRef.current?.setOptions(patch);
     setStatus(engineRef.current?.status() ?? null);
   }, []);
 
@@ -158,19 +183,26 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
       const sym = symbolRef.current;
       const tf = timeframeRef.current;
       const indexSym = isIndexSymbol(sym);
-      const candles = await provider.getCandles(sym, tf, 600);
-      const ltf = tf !== "1m" ? await provider.getCandles(sym, "1m", 1200) : undefined;
-      const us100 = indexSym ? await provider.getCandles("US100", tf, 600) : [];
-      const us500 = indexSym ? await provider.getCandles("US500", tf, 600) : [];
+      const p = profileFor(sym);
+      const btTf = p ? p.timeframe : tf;
+      const candles = await provider.getCandles(sym, btTf, 600);
+      const us100 = indexSym ? await provider.getCandles("US100", btTf, 600) : [];
+      const us500 = indexSym ? await provider.getCandles("US500", btTf, 600) : [];
       const htf = htfBiasRef.current ? await provider.getCandles(sym, "1h", 400) : undefined;
+      const btRisk = p ? { ...risk, riskPctPerTrade: p.riskPct } : risk;
       // defer the heavy O(n²) pass so the UI thread can paint the spinner
       await new Promise((r) => setTimeout(r, 30));
       setBacktest(
         runBacktest(
-          candles, sym, risk,
-          { ...DEFAULT_STRATEGY_OPTS, longOnly: longOnlyRef.current && indexSym, requireKillzone: killzoneRef.current },
+          candles, sym, btRisk,
           {
-            ltf: ltf && ltf.length ? ltf : undefined,
+            ...DEFAULT_STRATEGY_OPTS,
+            mode: "v1",
+            exitMode: p ? p.exit : exitModeRef.current,
+            longOnly: (p ? p.longOnly : longOnlyRef.current) && indexSym,
+            requireKillzone: p ? p.sessionFilter : killzoneRef.current,
+          },
+          {
             indices: indexSym ? { us100, us500 } : undefined,
             isIndex: indexSym,
             htf: htf && htf.length ? htf : undefined,
@@ -192,6 +224,7 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     longOnly,
     htfBiasFilter,
     requireKillzone,
+    exitMode,
     backtest,
     backtesting,
     start,

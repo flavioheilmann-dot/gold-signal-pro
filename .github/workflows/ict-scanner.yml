@@ -58,6 +58,6 @@ jobs:
           CAPITAL_IDENTIFIER: ${{ secrets.CAPITAL_IDENTIFIER }}
           CAPITAL_API_PASSWORD: ${{ secrets.CAPITAL_API_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          ICT_TIMEFRAME: ${{ github.event.inputs.timeframe || '5m' }}
-          ICT_SYMBOLS: ${{ github.event.inputs.symbols || 'US100,US500' }}
+          ICT_TIMEFRAME: ${{ github.event.inputs.timeframe || '15m' }}
+          ICT_SYMBOLS: ${{ github.event.inputs.symbols || 'GOLD,BTCUSD,US500,US100,GBPUSD' }}
         run: node ict-worker.bundle.mjs

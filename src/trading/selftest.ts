@@ -150,6 +150,38 @@ const C = (o: number, h: number, l: number, cl: number, t = 0): Candle => ({ tim
   check("backtest longOnly: no SELL trades", bt2.closed.every((t) => t.direction === "BUY"), bt2.closed.map((t) => t.direction));
 }
 
+// ── V1 entry + exit modes (trailing / 1:1) ──
+{
+  console.log("V1 + Exits:");
+  // V1: any emitted signal enters at the last close and carries an exitMode
+  let v1ok = true, v1seen = false;
+  for (let s = 1; s <= 8; s++) {
+    const c = new MockDataProvider(s, 2400).generate("GOLD", "5m", 300);
+    const r = analyze(c, { symbol: "GOLD", spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false },
+      DEFAULT_RISK, { sweepLookback: 10, k: 2, mode: "v1", exitMode: "trail" });
+    if (r.signal) {
+      v1seen = true;
+      if (r.signal.exitMode !== "trail" || r.signal.entry !== +c[c.length - 1].close.toFixed(2)) v1ok = false;
+    }
+  }
+  check("V1 signal: entry=last close + exitMode", v1seen && v1ok, { v1seen, v1ok });
+
+  const sigT: TradeSignal = { id: "T", time: 0, symbol: "X", direction: "BUY", entryZone: { from: 99.9, to: 100.1 }, entry: 100, stopLoss: 99, takeProfit1: 101, takeProfit2: 102, riskReward: 2, confidence: 80, session: "london", reasons: [], warnings: [], exitMode: "trail" };
+  const pbT = new PaperBroker();
+  pbT.openTrade(sigT, 1, 1, 0);
+  pbT.update(C(100, 102, 100, 101, 1)); // +2R high → trail stop ratchets to +1R (101)
+  const trailClose = pbT.update(C(101, 101.5, 100.9, 101, 2)); // retrace taps 101 → exit at +1R
+  check("trail exits at +1R (~0.98R after cost)", trailClose[0]?.trade.status === "closed_win" && Math.abs((trailClose[0]?.rMultiple ?? 0) - 0.98) < 0.001, trailClose[0]?.rMultiple);
+
+  const sigR: TradeSignal = { ...sigT, id: "R", exitMode: "rr1to1" };
+  const pbW = new PaperBroker(); pbW.openTrade(sigR, 1, 1, 0);
+  const rrWin = pbW.update(C(100, 101.2, 100, 101, 1)); // hits +1R
+  check("rr1to1 win at +1R", rrWin[0]?.trade.status === "closed_win" && Math.abs((rrWin[0]?.rMultiple ?? 0) - 0.98) < 0.001, rrWin[0]?.rMultiple);
+  const pbL = new PaperBroker(); pbL.openTrade(sigR, 1, 1, 0);
+  const rrLoss = pbL.update(C(100, 100.5, 98.9, 99, 1)); // hits stop -1R
+  check("rr1to1 loss at -1R", rrLoss[0]?.trade.status === "closed_loss" && Math.abs((rrLoss[0]?.rMultiple ?? 0) + 1.02) < 0.001, rrLoss[0]?.rMultiple);
+}
+
 // ── TJR building blocks ──
 {
   console.log("TJR:");

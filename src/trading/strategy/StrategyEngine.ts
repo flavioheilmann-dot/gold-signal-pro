@@ -1,6 +1,6 @@
 import type {
   Candle, Bias, LiquidityLevel, SweepEvent, StructureShift, FairValueGap,
-  TradeSignal, MarketContext, RiskConfig,
+  TradeSignal, MarketContext, RiskConfig, ExitMode,
 } from "../types";
 import { detectLiquidityLevels, drawsInDirection } from "./liquidity";
 import { findRecentSweep } from "./sweep";
@@ -65,6 +65,13 @@ export interface StrategyOptions {
   k: number; // pivot strength
   longOnly?: boolean; // indices drift up → only take longs (TJR V2 finding)
   requireKillzone?: boolean; // only enter inside the London/NY killzones
+  /**
+   * "v1" = the video's winning rebuild: sweep + break of structure → enter at
+   * market (no FVG/equilibrium retrace, no 1m trigger). "v2" = the richer
+   * sweep→MSS/IFVG→FVG/equilibrium retrace model. Default "v2".
+   */
+  mode?: "v1" | "v2";
+  exitMode?: ExitMode; // how the trade is managed (default "tp")
 }
 export const DEFAULT_STRATEGY_OPTS: StrategyOptions = { sweepLookback: 10, k: 2 };
 
@@ -121,6 +128,48 @@ export function analyze(
   const mss = detectStructureShift(candles, sweep.index, dir, opts.k);
   const ifvg = recentInverseFVG(candles, sweep.index, dir);
   if (!mss && !ifvg) return base("waiting_mss", { levels, sweep, bias });
+
+  // ── V1 (the video's winner): sweep + fresh BOS → enter at market ──
+  if (opts.mode === "v1") {
+    if (!mss || mss.index < candles.length - 1 - 3) return base("waiting_mss", { levels, sweep, mss, ifvg, bias });
+    const last = candles[candles.length - 1];
+    const entry = last.close;
+    const buffer = entry * 0.0003 + (ctx.spreadPct / 100) * entry;
+    const stopLoss = long ? sweep.extreme - buffer : sweep.extreme + buffer;
+    const riskDist = Math.abs(entry - stopLoss);
+    if (riskDist <= 0) return base("waiting_mss", { levels, sweep, mss, ifvg, bias });
+    const exitMode: ExitMode = opts.exitMode ?? "trail";
+    const oneR = entry + sign * riskDist;
+    const takeProfit2 = exitMode === "rr1to1" ? oneR : entry + sign * 2 * riskDist;
+    const riskReward = exitMode === "rr1to1" ? 1 : 2; // trail = open-ended (nominal)
+    const stopPct = (riskDist / entry) * 100;
+    const conf = scoreSignal({
+      sweep: true, mss: true, ifvg: false, cleanFVG: false, ltfConfirmed: false,
+      preferredSession: isPreferredSession(sessionOf(last.time)),
+      rrOk: riskReward >= risk.minRR,
+      contextConfirms: ctx.contextConfirms,
+      lowSpread: ctx.spreadPct <= risk.maxSpreadPct * 0.6,
+      newsRisk: ctx.newsRisk, badSpread: ctx.spreadPct > risk.maxSpreadPct,
+      choppy: ctx.choppy || isChoppy(candles), noCorrelation: false,
+    });
+    const reasons = [...conf.reasons, "V1: Sweep→BOS-Entry", exitMode === "rr1to1" ? "Exit: 1:1" : "Exit: Trailing-Stop (1R-Schritte)"];
+    const warnings = [...conf.warnings];
+    if (stopPct < risk.minStopPct) warnings.push("Stop sehr eng");
+    if (stopPct > risk.maxStopPct) warnings.push("Stop sehr weit");
+    const v1base = base("ready", { levels, sweep, mss, ifvg, bias });
+    if (conf.score < MIN_SIGNAL_SCORE) return { ...v1base, signal: null };
+    const signal: TradeSignal = {
+      id: `${ctx.symbol}-${last.time}-${dir}`, time: last.time, symbol: ctx.symbol,
+      direction: long ? "BUY" : "SELL",
+      entryZone: { from: +(entry - buffer).toFixed(2), to: +(entry + buffer).toFixed(2) },
+      entry: +entry.toFixed(2), stopLoss: +stopLoss.toFixed(2),
+      takeProfit1: +oneR.toFixed(2), takeProfit2: +takeProfit2.toFixed(2),
+      riskReward, confidence: conf.score, session: sessionOf(last.time),
+      reasons, warnings, exitMode,
+    };
+    return { ...v1base, signal };
+  }
+
   const anchorIndex = mss?.index ?? ifvg?.index ?? sweep.index;
 
   // D) entry zone — a fresh FVG, else fall back to the leg's equilibrium (50%)
@@ -236,6 +285,7 @@ export function analyze(
     session: sessionOf(last.time),
     reasons,
     warnings,
+    exitMode: opts.exitMode ?? "tp",
   };
 
   return partial({ signal });

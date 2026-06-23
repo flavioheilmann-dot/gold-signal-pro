@@ -178,7 +178,7 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
               onChange={(e) => eng.setTimeframe(e.target.value)}
               className="rounded-md border border-border/60 bg-background px-2 py-1 text-[10px] text-foreground"
             >
-              {["1m", "5m", "15m"].map((tf) => (
+              {["5m", "15m", "1h"].map((tf) => (
                 <option key={tf} value={tf}>{tf}</option>
               ))}
             </select>
@@ -231,9 +231,12 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
           {s.error && <span className="text-down">⚠ {s.error}</span>}
         </div>
 
-        {/* TJR V2 Strategie-Filter (aus dem "improved TJR"-Backtest) */}
+        {/* TJR V2 Strategie-Filter (aus dem "improved TJR"-Video) */}
         <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-          <span className="uppercase tracking-wider">Strategie:</span>
+          <span className="uppercase tracking-wider">Strategie V1:</span>
+          <span className="rounded px-1.5 py-0.5 uppercase tracking-wider border border-primary/40 bg-primary/10 text-primary">
+            Exit: {eng.exitMode === "rr1to1" ? "1:1" : eng.exitMode === "trail" ? "Trailing" : "TP"}
+          </span>
           {([
             ["longOnly", "Long-Only", eng.longOnly, eng.setLongOnly],
             ["htf", "1H-Bias", eng.htfBiasFilter, eng.setHtfBiasFilter],

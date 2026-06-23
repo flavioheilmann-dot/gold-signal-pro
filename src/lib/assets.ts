@@ -58,14 +58,36 @@ export const WATCHLIST: Asset[] = [
 ];
 
 /**
- * TJR-Instrumente: NASDAQ (US100 = NQ) als Haupt-Trade, S&P 500 (US500 = ES)
- * als Korrelations-/Alignment-Bestätigung. Die ICT-Strategie tradet bewusst
- * nur diese beiden (TJR-Stil). US100 zuerst = Default.
+ * TJR V2 "dream team" from the Revelio Trading backtest video: the five assets
+ * that survived 10y of testing, each with its own profile (timeframe, session
+ * filter, long-only, exit style, per-trade risk normalised to ~20% drawdown).
+ *  • Gold   — 5m, no session filter, both directions, trailing stop, 0.5%
+ *  • BTC    — 1h, no session filter, both directions, trailing stop, 2%
+ *  • US500  — 15m, session filter, LONG-ONLY, trailing stop, 1%
+ *  • US100  — 15m, session filter, LONG-ONLY, trailing stop, 1%
+ *  • GBPUSD — 15m, session filter, both directions, fixed 1:1, 1%
+ * (Silver was tested and dropped — unstable. Higher-timeframe bias did NOT help.)
  */
-export const TJR_EPICS = ["US100", "US500"] as const;
-export const TJR_ASSETS: Asset[] = TJR_EPICS.map(
-  (e) => WATCHLIST.find((a) => a.epic === e)!
-);
+export interface TjrProfile {
+  epic: string;
+  timeframe: string; // "5m" | "15m" | "1h"
+  sessionFilter: boolean; // restrict to London/NY killzones
+  longOnly: boolean;
+  exit: "trail" | "rr1to1";
+  riskPct: number; // per-trade risk (≈20% isolated drawdown)
+}
+
+export const TJR_PROFILES: Record<string, TjrProfile> = {
+  GOLD: { epic: "GOLD", timeframe: "5m", sessionFilter: false, longOnly: false, exit: "trail", riskPct: 0.5 },
+  BTCUSD: { epic: "BTCUSD", timeframe: "1h", sessionFilter: false, longOnly: false, exit: "trail", riskPct: 2 },
+  US500: { epic: "US500", timeframe: "15m", sessionFilter: true, longOnly: true, exit: "trail", riskPct: 1 },
+  US100: { epic: "US100", timeframe: "15m", sessionFilter: true, longOnly: true, exit: "trail", riskPct: 1 },
+  GBPUSD: { epic: "GBPUSD", timeframe: "15m", sessionFilter: true, longOnly: false, exit: "rr1to1", riskPct: 1 },
+};
+
+export const TJR_EPICS = ["GOLD", "BTCUSD", "US500", "US100", "GBPUSD"] as const;
+export const TJR_ASSETS: Asset[] = TJR_EPICS.map((e) => WATCHLIST.find((a) => a.epic === e)!);
+export const profileFor = (epic: string): TjrProfile | undefined => TJR_PROFILES[epic.toUpperCase()];
 
 export const KIND_LABEL: Record<AssetKind, string> = {
   metal: "Metall",

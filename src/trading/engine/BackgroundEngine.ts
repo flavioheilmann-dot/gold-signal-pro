@@ -9,7 +9,7 @@
 // laptop-off notifications; this engine is the live, in-app analyst.
 // A Node/Electron worker could import these same pure modules unchanged.
 // ─────────────────────────────────────────────────────────────
-import type { Bias, Candle, MarketContext, PaperTrade, RiskConfig, TradeSignal } from "../types";
+import type { Bias, Candle, ExitMode, MarketContext, PaperTrade, RiskConfig, TradeSignal } from "../types";
 import { DEFAULT_RISK } from "../types";
 import type { DataProvider } from "../data/DataProvider";
 import { analyze, DEFAULT_STRATEGY_OPTS, type SetupStage } from "../strategy/StrategyEngine";
@@ -27,23 +27,28 @@ export interface EngineOptions {
   intervalMs: number; // 5000–15000
   autoPaper: boolean; // auto-open paper trades at ≥75
   mtfEntry: boolean; // require a 1m BOS to confirm the entry (multi-timeframe)
-  // TJR V2 (from the "improved TJR" backtest) — all toggleable:
+  // TJR V2 (from the "improved TJR" video) — all toggleable:
+  mode: "v1" | "v2"; // v1 = the video's winning simple sweep→BOS entry
+  exitMode: ExitMode; // "trail" / "rr1to1" / "tp"
   longOnly: boolean; // indices drift up → only take longs
-  htfBiasFilter: boolean; // only trade with the 1H higher-timeframe trend
+  htfBiasFilter: boolean; // 1H bias filter (video found it does NOT help → default off)
   requireKillzone: boolean; // only enter inside the London/NY killzones
+  riskPct?: number; // per-trade risk override (per-asset, ≈20% DD)
   notify: NotifyConfig;
 }
 
 export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   symbol: "US100",
-  timeframe: "5m",
-  candleLimit: 500, // ~2 days of 5m candles → prev-day & session levels
+  timeframe: "15m", // video: indices on 15m
+  candleLimit: 500,
   intervalMs: 8000,
   autoPaper: true,
-  mtfEntry: true,
-  longOnly: true, // TJR V2 default: long-only on indices
-  htfBiasFilter: true, // TJR V2 default: trade with the 1H trend
-  requireKillzone: false, // off by default (killzone-only is more restrictive)
+  mtfEntry: false, // V1 enters on the BOS, no 1m trigger needed
+  mode: "v1", // the video's winner
+  exitMode: "trail", // 1R-step trailing stop, no partials
+  longOnly: true, // long-only on indices
+  htfBiasFilter: false, // video: 1H bias did not improve results
+  requireKillzone: true, // indices use the session filter
   notify: { browser: false, ntfy: false, ntfyTopic: "" },
 };
 
@@ -208,15 +213,20 @@ export class BackgroundEngine {
       this.indexAligned = align ? align.aligned : null;
       this.indexAlignDir = align ? align.dir : null;
 
-      // multi-timeframe: 1-minute candles confirm the actual entry (BOS)
+      // multi-timeframe (V2 only): 1-minute candles confirm the entry (BOS)
       const ltf =
-        this.opts.mtfEntry && this.opts.timeframe !== "1m"
+        this.opts.mode !== "v1" && this.opts.mtfEntry && this.opts.timeframe !== "1m"
           ? await this.provider.getCandles(this.opts.symbol, "1m", this.opts.candleLimit)
           : undefined;
 
-      // TJR V2: higher-timeframe (1H) trend bias
+      // higher-timeframe (1H) bias — off by default (video found it doesn't help)
       const htf = this.opts.htfBiasFilter ? await this.htfBiasOf() : null;
       this.htfBias = htf;
+
+      // per-asset risk override (≈20% isolated drawdown, video's portfolio sizing)
+      if (this.opts.riskPct && this.rm.cfg.riskPctPerTrade !== this.opts.riskPct) {
+        this.rm.cfg.riskPctPerTrade = this.opts.riskPct;
+      }
 
       const ctx: MarketContext = {
         symbol: this.opts.symbol,
@@ -231,6 +241,8 @@ export class BackgroundEngine {
 
       const opts = {
         ...DEFAULT_STRATEGY_OPTS,
+        mode: this.opts.mode,
+        exitMode: this.opts.exitMode,
         longOnly: this.opts.longOnly && isIndexSymbol(this.opts.symbol),
         requireKillzone: this.opts.requireKillzone,
       };

@@ -65,6 +65,14 @@ export interface FairValueGap {
   filled: boolean;
 }
 
+/**
+ * How a trade is managed once open:
+ *  • "tp"     — fixed TP1 (50% partial → breakeven) + TP2 runner (legacy V2).
+ *  • "trail"  — no take-profit; trail the stop up 1R at a time (TJR V2 finding).
+ *  • "rr1to1" — fixed 1:1, no partial (used for forex / non-trending assets).
+ */
+export type ExitMode = "tp" | "trail" | "rr1to1";
+
 export interface TradeSignal {
   id: string;
   time: number; // unix seconds
@@ -80,6 +88,7 @@ export interface TradeSignal {
   session: SessionName;
   reasons: string[];
   warnings: string[];
+  exitMode?: ExitMode; // default "tp"
 }
 
 export type TradeStatus =
@@ -110,6 +119,7 @@ export interface PaperTrade {
   pnl: number; // net account currency
   rMultiple: number;
   tookPartial: boolean;
+  exitMode?: ExitMode; // how the broker manages the exit (default "tp")
 }
 
 export interface RiskConfig {

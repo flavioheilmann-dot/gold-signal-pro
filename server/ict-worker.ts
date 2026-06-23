@@ -13,7 +13,8 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { analyze, DEFAULT_STRATEGY_OPTS } from "../src/trading/strategy/StrategyEngine";
 import { MIN_SIGNAL_SCORE } from "../src/trading/strategy/confidence";
-import { indicesAligned, isIndexSymbol, structureTrend, type StructTrend } from "../src/trading/strategy/tjr";
+import { indicesAligned, isIndexSymbol, type StructTrend } from "../src/trading/strategy/tjr";
+import { profileFor } from "../src/lib/assets";
 import { DEFAULT_RISK, type Candle, type MarketContext } from "../src/trading/types";
 // shared cloud-scanner utilities (plain ESM, bundled by esbuild)
 import { evaluateOpen, newSignal, hasConfluence, summarize, trimLog } from "./signal-journal.mjs";
@@ -41,11 +42,12 @@ const PASS = process.env.CAPITAL_API_PASSWORD || "";
 const NTFY_TOPIC = process.env.NTFY_TOPIC || "";
 const DRY_RUN = process.env.ICT_DRY_RUN === "true";
 
-const TF = process.env.ICT_TIMEFRAME || "5m";
-const RES_MAP: Record<string, string> = { "1m": "MINUTE", "5m": "MINUTE_5", "15m": "MINUTE_15" };
-const RESOLUTION = RES_MAP[TF] ?? "MINUTE_5";
-// TJR-Instrumente: NASDAQ (US100) Haupt-Trade + S&P 500 (US500) als Alignment.
-const SYMBOLS = (process.env.ICT_SYMBOLS || "US100,US500")
+const TF = process.env.ICT_TIMEFRAME || "15m";
+const RES_MAP: Record<string, string> = { "1m": "MINUTE", "5m": "MINUTE_5", "15m": "MINUTE_15", "1h": "HOUR" };
+const RESOLUTION = RES_MAP[TF] ?? "MINUTE_15";
+const resForTf = (tf: string) => RES_MAP[tf] ?? RESOLUTION;
+// TJR V2 "dream team" — each symbol uses its own profile (timeframe/exit/etc.).
+const SYMBOLS = (process.env.ICT_SYMBOLS || "GOLD,BTCUSD,US500,US100,GBPUSD")
   .split(",").map((s) => s.trim()).filter(Boolean);
 
 if (!API_KEY || !IDENT || !PASS) { console.error("Missing Capital.com credentials"); process.exit(1); }
@@ -133,10 +135,10 @@ async function fetchCandles(epic: string): Promise<Candle[]> {
   return fetchCandlesRes(epic, RESOLUTION);
 }
 
-// TJR index-alignment reference (US100 × US500) on the scan timeframe.
+// TJR index-alignment reference (US100 × US500) on the indices' 15m timeframe.
 async function computeAlignment(): Promise<{ aligned: boolean; dir: StructTrend } | null> {
   try {
-    const [a, b] = await Promise.all([fetchCandles("US100"), fetchCandles("US500")]);
+    const [a, b] = await Promise.all([fetchCandlesRes("US100", "MINUTE_15"), fetchCandlesRes("US500", "MINUTE_15")]);
     if (a.length < 30 || b.length < 30) return { aligned: false, dir: "range" };
     return indicesAligned(a, b);
   } catch (e) {
@@ -168,16 +170,13 @@ export async function runScan() {
 
   for (const epic of SYMBOLS) {
     try {
-      const candles: Candle[] = await fetchCandles(epic);
+      const prof = profileFor(epic);
+      const symTf = prof ? prof.timeframe : TF;
+      const candles: Candle[] = await fetchCandlesRes(epic, resForTf(symTf));
       if (candles.length < 80) { console.log(`  · ${epic}: zu wenig Daten (${candles.length})`); continue; }
-      if (isStale(candles[candles.length - 1].time, tfSeconds(TF))) { console.log(`  · ${epic}: Markt zu / Daten veraltet`); continue; }
+      if (isStale(candles[candles.length - 1].time, tfSeconds(symTf))) { console.log(`  · ${epic}: Markt zu / Daten veraltet`); continue; }
 
       const idx = isIndexSymbol(epic);
-      // multi-timeframe: 1-minute candles confirm the actual entry (1m BOS)
-      const ltf = TF !== "1m" ? await fetchCandlesRes(epic, "MINUTE").catch(() => [] as Candle[]) : undefined;
-      // TJR V2: 1H higher-timeframe bias
-      const h1 = await fetchCandlesRes(epic, "HOUR").catch(() => [] as Candle[]);
-      const htfBias: StructTrend = h1.length >= 30 ? structureTrend(h1) : "range";
       const ctx: MarketContext = {
         symbol: epic,
         spreadPct: 0.02,
@@ -187,10 +186,16 @@ export async function runScan() {
         // gate active only when we actually know the alignment; fail open otherwise
         indexAligned: idx ? (align ? align.aligned : undefined) : undefined,
         indexAlignDir: idx ? align?.dir : undefined,
-        htfBias,
       };
-      const opts = { ...DEFAULT_STRATEGY_OPTS, longOnly: idx, requireKillzone: false };
-      const res = analyze(candles, ctx, DEFAULT_RISK, opts, ltf);
+      // TJR V2 (video): simple V1 entry, per-asset exit/long-only/session profile
+      const opts = {
+        ...DEFAULT_STRATEGY_OPTS,
+        mode: "v1" as const,
+        exitMode: prof ? prof.exit : ("trail" as const),
+        longOnly: prof ? prof.longOnly : idx,
+        requireKillzone: prof ? prof.sessionFilter : false,
+      };
+      const res = analyze(candles, ctx, DEFAULT_RISK, opts);
 
       // only actionable setups: a full sweep→(BOS/IFVG)→(FVG/EQ) plan, score ≥ 70
       if (!res.signal || res.signal.confidence < MIN_SIGNAL_SCORE) {
@@ -208,19 +213,19 @@ export async function runScan() {
       const long = sig.direction === "BUY";
       const ndir = long ? "LONG" : "SHORT"; // normalised for cross-strategy confluence
       const conf = hasConfluence(epic, ndir, otherTrack);
-      const stageNote =
-        res.stage === "ready" ? "Entry bestätigt (1m-BOS)"
-        : res.stage === "waiting_entry" ? "Preis in Zone — 1m-BOS abwarten"
-        : "Retrace abwarten";
+      const trail = sig.exitMode === "trail";
+      const exitLine = trail
+        ? `SL: ${sig.stopLoss}  Exit: Trailing-Stop (ab +1R nachziehen, kein TP)`
+        : `SL: ${sig.stopLoss}  TP (1:1): ${sig.takeProfit1}`;
       const title = conf ? `ICT+Box: ${epic} ${sig.direction}` : `ICT: ${epic} ${sig.direction}`;
       const lines = [
-        `${sig.confidence}/100 · RR 1:${sig.riskReward} · ${stageNote}`,
+        `${sig.confidence}/100 · ${trail ? "Trailing-Exit" : "RR 1:1"} · V1 Sweep→BOS-Entry`,
         ...(conf ? ["KONFLUENZ: Box zeigt dieselbe Richtung"] : []),
-        `Entry-Zone: ${sig.entryZone.from.toFixed(2)}–${sig.entryZone.to.toFixed(2)} (≈${sig.entry})`,
-        `SL: ${sig.stopLoss}  TP1: ${sig.takeProfit1}  TP2: ${sig.takeProfit2}`,
+        `Entry: ≈${sig.entry}`,
+        exitLine,
         `Grund: ${sig.reasons.join(", ")}`,
         ...(sig.warnings.length ? [`Warnung: ${sig.warnings.join(", ")}`] : []),
-        `Quelle: Capital.com · ${TF} · ICT`,
+        `Quelle: Capital.com · ${symTf} · ICT V1`,
         `Nur Analyse/Paper - kein Finanzrat, zuerst selbst pruefen.`,
       ];
 

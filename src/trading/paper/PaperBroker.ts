@@ -1,4 +1,4 @@
-import type { Candle, PaperTrade, TradeSignal } from "../types";
+import type { Candle, ExitMode, PaperTrade, TradeSignal } from "../types";
 
 /** Spread/slippage drag applied per closed trade, in units of R. */
 const COST_R = 0.02;
@@ -9,24 +9,34 @@ export interface CloseEvent {
   rMultiple: number;
 }
 
+interface Machine {
+  R: number;
+  remaining: number;
+  realizedR: number;
+  stop: number;
+  maxR: number; // best favourable excursion in R (for the trailing exit)
+  mode: ExitMode;
+}
+
 /**
  * Paper-trading simulator. Opens simulated positions from signals and steps
- * them forward candle-by-candle: stop loss, TP1 (50% partial + move to
- * breakeven), then runner to TP2. Pure simulation — no real orders.
- *
- * Internal per-trade machine state is tracked in a side map so PaperTrade
- * stays a clean serialisable record.
+ * them forward candle-by-candle. Exit handling depends on the signal's
+ * `exitMode`:
+ *  • "trail"  — no take-profit; once price reaches +1R the stop ratchets to
+ *               break-even, +2R → +1R, … (the TJR V2 trailing exit). No partials.
+ *  • "rr1to1" — fixed 1:1: exits at +1R or the stop, no partial.
+ *  • "tp"     — legacy: TP1 (50% partial → breakeven) then TP2 runner.
+ * Pure simulation — no real orders.
  */
 export class PaperBroker {
   open: PaperTrade[] = [];
   closed: PaperTrade[] = [];
 
-  private machine = new Map<string, { R: number; remaining: number; realizedR: number; stop: number }>();
+  private machine = new Map<string, Machine>();
 
   constructor(open: PaperTrade[] = [], closed: PaperTrade[] = []) {
     this.open = open;
     this.closed = closed;
-    // rebuild machine state for any re-hydrated open trades
     for (const t of open) {
       const R = Math.abs(t.entry - t.stopLoss);
       this.machine.set(t.id, {
@@ -34,6 +44,8 @@ export class PaperBroker {
         remaining: t.tookPartial ? 0.5 : 1,
         realizedR: t.tookPartial ? 0.5 : 0,
         stop: t.tookPartial ? t.entry : t.stopLoss,
+        maxR: 0,
+        mode: t.exitMode ?? "tp",
       });
     }
   }
@@ -64,17 +76,16 @@ export class PaperBroker {
       pnl: 0,
       rMultiple: 0,
       tookPartial: false,
+      exitMode: sig.exitMode ?? "tp",
     };
     this.open.push(t);
-    this.machine.set(t.id, { R: Math.abs(t.entry - t.stopLoss), remaining: 1, realizedR: 0, stop: t.stopLoss });
+    this.machine.set(t.id, { R: Math.abs(t.entry - t.stopLoss), remaining: 1, realizedR: 0, stop: t.stopLoss, maxR: 0, mode: t.exitMode ?? "tp" });
     return t;
   }
 
   /**
    * Step open trades with a new candle. If `symbol` is given, only trades for
-   * that symbol advance (the engine watches one symbol at a time, so trades on
-   * other symbols pause rather than being stepped with the wrong candles).
-   * Returns trades that fully closed.
+   * that symbol advance. Returns trades that fully closed.
    */
   update(candle: Candle, symbol?: string): CloseEvent[] {
     const closedNow: CloseEvent[] = [];
@@ -83,8 +94,41 @@ export class PaperBroker {
       const m = this.machine.get(t.id);
       if (!m || m.R <= 0) continue;
       const long = t.direction === "BUY";
+      const sign = long ? 1 : -1;
 
-      // 1) stop loss first (conservative)
+      // ── Trailing-stop exit (no take-profit, no partials) ──
+      if (m.mode === "trail") {
+        if (long ? candle.low <= m.stop : candle.high >= m.stop) {
+          this.closeAt(t, m, m.stop, candle.time, closedNow);
+          continue;
+        }
+        // ratchet the trail with this bar's favourable extreme
+        const ext = long ? candle.high : candle.low;
+        const rNow = (sign * (ext - t.entry)) / m.R;
+        if (rNow > m.maxR) m.maxR = rNow;
+        const level = Math.floor(m.maxR); // +1R → BE, +2R → +1R, …
+        if (level >= 1) {
+          const newStop = t.entry + sign * (level - 1) * m.R;
+          m.stop = long ? Math.max(m.stop, newStop) : Math.min(m.stop, newStop);
+          if (level >= 1) { t.tookPartial = true; t.status = "partial"; } // "in profit / risk-free"
+        }
+        continue;
+      }
+
+      // ── Fixed 1:1 exit (no partials) ──
+      if (m.mode === "rr1to1") {
+        if (long ? candle.low <= m.stop : candle.high >= m.stop) {
+          this.closeAt(t, m, m.stop, candle.time, closedNow);
+          continue;
+        }
+        if (long ? candle.high >= t.takeProfit1 : candle.low <= t.takeProfit1) {
+          this.closeAt(t, m, t.takeProfit1, candle.time, closedNow);
+          continue;
+        }
+        continue;
+      }
+
+      // ── Legacy "tp": stop → TP1 (50% partial + breakeven) → TP2 runner ──
       const hitStop = long ? candle.low <= m.stop : candle.high >= m.stop;
       if (hitStop) {
         const rOnExit = (long ? m.stop - t.entry : t.entry - m.stop) / m.R;
@@ -94,8 +138,6 @@ export class PaperBroker {
         closedNow.push({ trade: t, pnl: t.pnl, rMultiple: t.rMultiple });
         continue;
       }
-
-      // 2) TP1 → realise 50%, move stop to breakeven
       if (!t.tookPartial) {
         const hitTp1 = long ? candle.high >= t.takeProfit1 : candle.low <= t.takeProfit1;
         if (hitTp1) {
@@ -106,8 +148,6 @@ export class PaperBroker {
           t.status = "partial";
         }
       }
-
-      // 3) TP2 → close runner
       const hitTp2 = long ? candle.high >= t.takeProfit2 : candle.low <= t.takeProfit2;
       if (hitTp2) {
         m.realizedR += m.remaining * ((long ? t.takeProfit2 - t.entry : t.entry - t.takeProfit2) / m.R);
@@ -117,6 +157,15 @@ export class PaperBroker {
       }
     }
     return closedNow;
+  }
+
+  /** Close a single-exit trade (trail / 1:1) entirely at `exit`. */
+  private closeAt(t: PaperTrade, m: Machine, exit: number, time: number, out: CloseEvent[]) {
+    const long = t.direction === "BUY";
+    m.realizedR = (long ? exit - t.entry : t.entry - exit) / m.R;
+    m.remaining = 0;
+    this.finalize(t, m, exit, time);
+    out.push({ trade: t, pnl: t.pnl, rMultiple: t.rMultiple });
   }
 
   private finalize(t: PaperTrade, m: { realizedR: number }, exit: number, time: number) {
