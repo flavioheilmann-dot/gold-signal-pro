@@ -215,12 +215,42 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
               </span>
             </span>
           )}
+          {s.htfBias !== null && (
+            <span className="text-muted-foreground">
+              1H-Bias:{" "}
+              <span className={s.htfBias === "up" ? "text-up" : s.htfBias === "down" ? "text-down" : "text-muted-foreground"}>
+                {s.htfBias === "up" ? "↑ up" : s.htfBias === "down" ? "↓ down" : "range"}
+              </span>
+            </span>
+          )}
           {s.ltfConfirmed !== null && (
             <span className="text-muted-foreground">
               1m-Entry: <span className={s.ltfConfirmed ? "text-up" : "text-gold"}>{s.ltfConfirmed ? "bestätigt" : "offen"}</span>
             </span>
           )}
           {s.error && <span className="text-down">⚠ {s.error}</span>}
+        </div>
+
+        {/* TJR V2 Strategie-Filter (aus dem "improved TJR"-Backtest) */}
+        <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+          <span className="uppercase tracking-wider">Strategie:</span>
+          {([
+            ["longOnly", "Long-Only", eng.longOnly, eng.setLongOnly],
+            ["htf", "1H-Bias", eng.htfBiasFilter, eng.setHtfBiasFilter],
+            ["kz", "Killzone", eng.requireKillzone, eng.setRequireKillzone],
+          ] as const).map(([k, label, on, set]) => (
+            <button
+              key={k}
+              onClick={() => set(!on)}
+              title={`${label} ${on ? "aus" : "ein"}schalten`}
+              className={cn(
+                "rounded px-1.5 py-0.5 uppercase tracking-wider border transition-colors",
+                on ? "border-up/50 bg-up/10 text-up" : "border-border/50 text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label} {on ? "an" : "aus"}
+            </button>
+          ))}
         </div>
 
         {/* ICT chart with overlays (zoom + pan, enlarge) */}

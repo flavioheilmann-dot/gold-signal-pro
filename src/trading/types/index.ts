@@ -152,6 +152,11 @@ export interface MarketContext {
   indexAligned?: boolean;
   /** Direction the indices agree on ("up"/"down") when indexAligned is true. */
   indexAlignDir?: "up" | "down" | "range";
+  /**
+   * Higher-timeframe (e.g. 1H) trend bias for this instrument. When set and not
+   * "range", trades against it are skipped (TJR "trade with the HTF bias").
+   */
+  htfBias?: "up" | "down" | "range";
 }
 
 export const TRADING_DISCLAIMER = "For education and paper trading only. Not financial advice.";

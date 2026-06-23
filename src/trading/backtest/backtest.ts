@@ -1,7 +1,7 @@
 import type { Candle, RiskConfig, MarketContext, PaperTrade } from "../types";
 import { analyze, DEFAULT_STRATEGY_OPTS, type StrategyOptions } from "../strategy/StrategyEngine";
 import { MIN_PAPER_SCORE } from "../strategy/confidence";
-import { indicesAligned } from "../strategy/tjr";
+import { indicesAligned, structureTrend } from "../strategy/tjr";
 import { RiskManager } from "../risk/RiskManager";
 import { PaperBroker } from "../paper/PaperBroker";
 
@@ -37,6 +37,7 @@ export interface BacktestInputs {
   ltf?: Candle[];
   indices?: { us100: Candle[]; us500: Candle[] };
   isIndex?: boolean;
+  htf?: Candle[]; // 1H series for the higher-timeframe bias filter
 }
 
 /** Candles up to and including time `t` (series assumed time-ascending). */
@@ -68,7 +69,7 @@ export function runBacktest(
   const step = candles.length > 1 ? candles[1].time - candles[0].time : 300;
   const gateIndices = inputs.isIndex && inputs.indices;
   // moving pointers so per-bar slicing stays cheap and monotonic
-  const pA = { i: 0 }, pB = { i: 0 }, pL = { i: 0 };
+  const pA = { i: 0 }, pB = { i: 0 }, pL = { i: 0 }, pH = { i: 0 };
 
   for (let i = 60; i < candles.length; i++) {
     const bar = candles[i];
@@ -99,9 +100,16 @@ export function runBacktest(
     // 1m candles up to this bar's close for the MTF entry trigger
     const ltf = inputs.ltf ? sliceUpTo(inputs.ltf, bar.time + step, pL) : undefined;
 
+    // higher-timeframe (1H) bias up to this bar
+    let htfBias: "up" | "down" | "range" | undefined;
+    if (inputs.htf) {
+      const h = sliceUpTo(inputs.htf, bar.time, pH);
+      htfBias = h.length >= 30 ? structureTrend(h) : "range";
+    }
+
     const ctx: MarketContext = {
       symbol, spreadPct: 0.02, newsRisk: false,
-      contextConfirms: aligned, choppy: false, indexAligned,
+      contextConfirms: aligned, choppy: false, indexAligned, htfBias,
     };
     const res = analyze(window, ctx, risk, opts, ltf);
     if (res.stage === "ready" && res.signal && res.signal.confidence >= MIN_PAPER_SCORE) {

@@ -9,6 +9,7 @@ import { MockDataProvider } from "./data/MockDataProvider";
 import { runBacktest } from "./backtest/backtest";
 import { structureTrend, indicesAligned, equilibrium, detectInverseFVGs, recentBOS, isIndexSymbol } from "./strategy/tjr";
 import { drawsInDirection } from "./strategy/liquidity";
+import { isKillzone } from "./strategy/sessions";
 import { DEFAULT_RISK, type Candle, type LiquidityLevel, type TradeSignal } from "./types";
 
 let pass = 0, fail = 0;
@@ -119,6 +120,34 @@ const C = (o: number, h: number, l: number, cl: number, t = 0): Candle => ({ tim
   const blocked = analyze(candles, { symbol: "US100", spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false, indexAligned: false }, DEFAULT_RISK);
   check("indexAligned:false -> no_alignment, no signal", blocked.stage === "no_alignment" && blocked.signal === null, blocked.stage);
   console.log(`     (backtest: ${bt.trades} trades, winRate ${(bt.winRate * 100).toFixed(0)}%, PF ${bt.profitFactor}, netPnl ${bt.netPnl})`);
+}
+
+// ── TJR V2 filters (from the "improved TJR" video) ──
+{
+  console.log("TJR V2:");
+  const ctxBase = { spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false };
+  // killzones: London open (08:00 UTC) in, Asia (02:00 UTC) out
+  check("isKillzone 08:00 UTC", isKillzone(Date.UTC(2026, 5, 23, 8, 0, 0) / 1000) === true, true);
+  check("isKillzone 02:00 UTC false", isKillzone(Date.UTC(2026, 5, 23, 2, 0, 0) / 1000) === false, false);
+  // long-only: across seeds, a signal is NEVER a SELL
+  let sawSell = false;
+  for (let s = 1; s <= 8; s++) {
+    const c = new MockDataProvider(s, 2400).generate("US100", "5m", 300);
+    const r = analyze(c, { symbol: "US100", ...ctxBase }, DEFAULT_RISK, { sweepLookback: 10, k: 2, longOnly: true });
+    if (r.signal && r.signal.direction === "SELL") sawSell = true;
+  }
+  check("longOnly never emits SELL", sawSell === false, sawSell);
+  // htfBias present → still a known, non-crashing stage
+  const cs = new MockDataProvider(7, 2400).generate("US100", "5m", 300);
+  const rHtf = analyze(cs, { symbol: "US100", ...ctxBase, htfBias: "down" }, DEFAULT_RISK);
+  check("htfBias set → string stage", typeof rHtf.stage === "string", rHtf.stage);
+  // backtest with htf + longOnly + indices doesn't throw and returns numbers
+  const htf = new MockDataProvider(7, 2400).generate("US100", "1h", 200);
+  const bt2 = runBacktest(cs, "US100", DEFAULT_RISK, { sweepLookback: 10, k: 2, longOnly: true },
+    { htf, isIndex: true, indices: { us100: cs, us500: cs } });
+  check("backtest V2 numeric trades", typeof bt2.trades === "number" && bt2.equityCurve.length >= 1, bt2.trades);
+  // long-only backtest: no closed trade is a SELL
+  check("backtest longOnly: no SELL trades", bt2.closed.every((t) => t.direction === "BUY"), bt2.closed.map((t) => t.direction));
 }
 
 // ── TJR building blocks ──

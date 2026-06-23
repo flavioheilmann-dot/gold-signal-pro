@@ -5,6 +5,7 @@ import { CapitalDataProvider } from "../data/CapitalDataProvider";
 import type { DataProvider } from "../data/DataProvider";
 import { DEFAULT_RISK, type PaperTrade, type RiskConfig } from "../types";
 import { runBacktest, type BacktestResult } from "../backtest/backtest";
+import { DEFAULT_STRATEGY_OPTS } from "../strategy/StrategyEngine";
 import { isIndexSymbol } from "../strategy/tjr";
 
 const LS_KEY = "gsp_trading_engine_v1";
@@ -42,6 +43,13 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
   const symbolRef = useRef("US100");
   const timeframeRef = useRef("5m");
   const intervalRef = useRef(8000);
+  // TJR V2 toggles (mirror EngineOptions; refs so the backtest can read them)
+  const [longOnly, setLongOnlyUi] = useState(true);
+  const [htfBiasFilter, setHtfBiasUi] = useState(true);
+  const [requireKillzone, setKillzoneUi] = useState(false);
+  const longOnlyRef = useRef(true);
+  const htfBiasRef = useRef(true);
+  const killzoneRef = useRef(false);
 
   // build the engine (once, and whenever the data source changes)
   const build = useCallback(
@@ -110,6 +118,19 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     engineRef.current?.setOptions({ intervalMs: ms });
   }, []);
 
+  const setLongOnly = useCallback((v: boolean) => {
+    longOnlyRef.current = v; setLongOnlyUi(v);
+    engineRef.current?.setOptions({ longOnly: v });
+  }, []);
+  const setHtfBiasFilter = useCallback((v: boolean) => {
+    htfBiasRef.current = v; setHtfBiasUi(v);
+    engineRef.current?.setOptions({ htfBiasFilter: v });
+  }, []);
+  const setRequireKillzone = useCallback((v: boolean) => {
+    killzoneRef.current = v; setKillzoneUi(v);
+    engineRef.current?.setOptions({ requireKillzone: v });
+  }, []);
+
   const setDataMode = useCallback(
     (mode: DataMode) => {
       const wasRunning = engineRef.current?.isRunning();
@@ -141,14 +162,20 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
       const ltf = tf !== "1m" ? await provider.getCandles(sym, "1m", 1200) : undefined;
       const us100 = indexSym ? await provider.getCandles("US100", tf, 600) : [];
       const us500 = indexSym ? await provider.getCandles("US500", tf, 600) : [];
+      const htf = htfBiasRef.current ? await provider.getCandles(sym, "1h", 400) : undefined;
       // defer the heavy O(n²) pass so the UI thread can paint the spinner
       await new Promise((r) => setTimeout(r, 30));
       setBacktest(
-        runBacktest(candles, sym, risk, undefined, {
-          ltf: ltf && ltf.length ? ltf : undefined,
-          indices: indexSym ? { us100, us500 } : undefined,
-          isIndex: indexSym,
-        })
+        runBacktest(
+          candles, sym, risk,
+          { ...DEFAULT_STRATEGY_OPTS, longOnly: longOnlyRef.current && indexSym, requireKillzone: killzoneRef.current },
+          {
+            ltf: ltf && ltf.length ? ltf : undefined,
+            indices: indexSym ? { us100, us500 } : undefined,
+            isIndex: indexSym,
+            htf: htf && htf.length ? htf : undefined,
+          }
+        )
       );
     } finally {
       setBacktesting(false);
@@ -162,6 +189,9 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     symbol,
     timeframe,
     intervalMs,
+    longOnly,
+    htfBiasFilter,
+    requireKillzone,
     backtest,
     backtesting,
     start,
@@ -170,6 +200,9 @@ export function useTradingEngine(risk: RiskConfig = DEFAULT_RISK) {
     setSymbol,
     setTimeframe,
     setIntervalMs,
+    setLongOnly,
+    setHtfBiasFilter,
+    setRequireKillzone,
     setDataMode,
     resetPaper,
     runBacktestNow,

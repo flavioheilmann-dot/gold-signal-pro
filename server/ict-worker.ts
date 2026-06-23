@@ -11,9 +11,9 @@
 // For education / paper analysis only. Sends notifications, never orders.
 // ─────────────────────────────────────────────────────────────
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { analyze } from "../src/trading/strategy/StrategyEngine";
+import { analyze, DEFAULT_STRATEGY_OPTS } from "../src/trading/strategy/StrategyEngine";
 import { MIN_SIGNAL_SCORE } from "../src/trading/strategy/confidence";
-import { indicesAligned, isIndexSymbol, type StructTrend } from "../src/trading/strategy/tjr";
+import { indicesAligned, isIndexSymbol, structureTrend, type StructTrend } from "../src/trading/strategy/tjr";
 import { DEFAULT_RISK, type Candle, type MarketContext } from "../src/trading/types";
 // shared cloud-scanner utilities (plain ESM, bundled by esbuild)
 import { evaluateOpen, newSignal, hasConfluence, summarize, trimLog } from "./signal-journal.mjs";
@@ -175,6 +175,9 @@ export async function runScan() {
       const idx = isIndexSymbol(epic);
       // multi-timeframe: 1-minute candles confirm the actual entry (1m BOS)
       const ltf = TF !== "1m" ? await fetchCandlesRes(epic, "MINUTE").catch(() => [] as Candle[]) : undefined;
+      // TJR V2: 1H higher-timeframe bias
+      const h1 = await fetchCandlesRes(epic, "HOUR").catch(() => [] as Candle[]);
+      const htfBias: StructTrend = h1.length >= 30 ? structureTrend(h1) : "range";
       const ctx: MarketContext = {
         symbol: epic,
         spreadPct: 0.02,
@@ -184,8 +187,10 @@ export async function runScan() {
         // gate active only when we actually know the alignment; fail open otherwise
         indexAligned: idx ? (align ? align.aligned : undefined) : undefined,
         indexAlignDir: idx ? align?.dir : undefined,
+        htfBias,
       };
-      const res = analyze(candles, ctx, DEFAULT_RISK, undefined, ltf);
+      const opts = { ...DEFAULT_STRATEGY_OPTS, longOnly: idx, requireKillzone: false };
+      const res = analyze(candles, ctx, DEFAULT_RISK, opts, ltf);
 
       // only actionable setups: a full sweep→(BOS/IFVG)→(FVG/EQ) plan, score ≥ 70
       if (!res.signal || res.signal.confidence < MIN_SIGNAL_SCORE) {

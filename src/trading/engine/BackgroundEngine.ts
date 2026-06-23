@@ -12,8 +12,8 @@
 import type { Bias, Candle, MarketContext, PaperTrade, RiskConfig, TradeSignal } from "../types";
 import { DEFAULT_RISK } from "../types";
 import type { DataProvider } from "../data/DataProvider";
-import { analyze, type SetupStage } from "../strategy/StrategyEngine";
-import { indicesAligned, isIndexSymbol, type StructTrend } from "../strategy/tjr";
+import { analyze, DEFAULT_STRATEGY_OPTS, type SetupStage } from "../strategy/StrategyEngine";
+import { indicesAligned, isIndexSymbol, structureTrend, type StructTrend } from "../strategy/tjr";
 import { MIN_PAPER_SCORE } from "../strategy/confidence";
 import { RiskManager, type RiskState, type RiskStatus } from "../risk/RiskManager";
 import { PaperBroker } from "../paper/PaperBroker";
@@ -27,6 +27,10 @@ export interface EngineOptions {
   intervalMs: number; // 5000–15000
   autoPaper: boolean; // auto-open paper trades at ≥75
   mtfEntry: boolean; // require a 1m BOS to confirm the entry (multi-timeframe)
+  // TJR V2 (from the "improved TJR" backtest) — all toggleable:
+  longOnly: boolean; // indices drift up → only take longs
+  htfBiasFilter: boolean; // only trade with the 1H higher-timeframe trend
+  requireKillzone: boolean; // only enter inside the London/NY killzones
   notify: NotifyConfig;
 }
 
@@ -37,6 +41,9 @@ export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   intervalMs: 8000,
   autoPaper: true,
   mtfEntry: true,
+  longOnly: true, // TJR V2 default: long-only on indices
+  htfBiasFilter: true, // TJR V2 default: trade with the 1H trend
+  requireKillzone: false, // off by default (killzone-only is more restrictive)
   notify: { browser: false, ntfy: false, ntfyTopic: "" },
 };
 
@@ -63,6 +70,7 @@ export interface EngineStatus {
   // transparency for the new TJR gates
   indexAligned: boolean | null; // null = not an index (gate N/A)
   indexAlignDir: StructTrend | null;
+  htfBias: StructTrend | null; // 1H higher-timeframe trend (null = filter off)
   ltfConfirmed: boolean | null; // 1m entry trigger state (null = MTF off / on 1m)
   candles: Candle[]; // last analyzed HTF candles (for the chart)
 }
@@ -93,10 +101,13 @@ export class BackgroundEngine {
   private error: string | null = null;
   private indexAligned: boolean | null = null;
   private indexAlignDir: StructTrend | null = null;
+  private htfBias: StructTrend | null = null;
   private ltfConfirmed: boolean | null = null;
   private lastCandles: Candle[] = [];
   // index-alignment reference series, refetched at most every 30s
   private alignCache: { at: number; tf: string; aligned: boolean; dir: StructTrend } | null = null;
+  // 1H higher-timeframe bias, refetched at most every 60s
+  private htfCache: { at: number; sym: string; bias: StructTrend } | null = null;
 
   onUpdate: (status: EngineStatus) => void = () => {};
 
@@ -133,9 +144,11 @@ export class BackgroundEngine {
       this.error = null;
       this.indexAligned = null;
       this.indexAlignDir = null;
+      this.htfBias = null;
       this.ltfConfirmed = null;
       this.lastCandles = [];
       this.alignCache = null;
+      this.htfCache = null;
       if (this.running) this.tick();
     }
 
@@ -201,6 +214,10 @@ export class BackgroundEngine {
           ? await this.provider.getCandles(this.opts.symbol, "1m", this.opts.candleLimit)
           : undefined;
 
+      // TJR V2: higher-timeframe (1H) trend bias
+      const htf = this.opts.htfBiasFilter ? await this.htfBiasOf() : null;
+      this.htfBias = htf;
+
       const ctx: MarketContext = {
         symbol: this.opts.symbol,
         spreadPct,
@@ -209,9 +226,15 @@ export class BackgroundEngine {
         choppy: false,
         indexAligned: align ? align.aligned : undefined,
         indexAlignDir: align ? align.dir : undefined,
+        htfBias: htf ?? undefined,
       };
 
-      const res = analyze(candles, ctx, this.rm.cfg, undefined, ltf);
+      const opts = {
+        ...DEFAULT_STRATEGY_OPTS,
+        longOnly: this.opts.longOnly && isIndexSymbol(this.opts.symbol),
+        requireKillzone: this.opts.requireKillzone,
+      };
+      const res = analyze(candles, ctx, this.rm.cfg, opts, ltf);
       this.stage = res.stage;
       this.stageLabel = res.stageLabel;
       this.bias = res.bias;
@@ -270,6 +293,21 @@ export class BackgroundEngine {
     return res;
   }
 
+  /**
+   * Higher-timeframe (1H) trend bias for the active symbol, cached 60s. Returns
+   * "range" when there isn't enough data so the bias filter simply won't block.
+   */
+  private async htfBiasOf(): Promise<StructTrend> {
+    const now = Date.now();
+    if (this.htfCache && this.htfCache.sym === this.opts.symbol && now - this.htfCache.at < 60_000) {
+      return this.htfCache.bias;
+    }
+    const h1 = await this.provider.getCandles(this.opts.symbol, "1h", 200);
+    const bias = h1.length >= 30 ? structureTrend(h1) : ("range" as StructTrend);
+    this.htfCache = { at: now, sym: this.opts.symbol, bias };
+    return bias;
+  }
+
   status(): EngineStatus {
     return {
       running: this.running,
@@ -290,6 +328,7 @@ export class BackgroundEngine {
       error: this.error,
       indexAligned: this.indexAligned,
       indexAlignDir: this.indexAlignDir,
+      htfBias: this.htfBias,
       ltfConfirmed: this.ltfConfirmed,
       candles: this.lastCandles,
     };

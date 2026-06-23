@@ -6,13 +6,16 @@ import { detectLiquidityLevels, drawsInDirection } from "./liquidity";
 import { findRecentSweep } from "./sweep";
 import { detectStructureShift } from "./structure";
 import { findEntryFVG } from "./fvg";
-import { sessionOf, isPreferredSession } from "./sessions";
+import { sessionOf, isPreferredSession, isKillzone } from "./sessions";
 import { scoreSignal, MIN_SIGNAL_SCORE } from "./confidence";
 import { recentInverseFVG, equilibrium, recentBOS, type InverseFvg } from "./tjr";
 
 export type SetupStage =
   | "no_data"
   | "no_alignment" // TJR: NASDAQ/ES disagree → stand aside
+  | "long_only_skip" // long-only mode (indices) → short setup ignored
+  | "htf_conflict" // setup against the higher-timeframe bias → skip
+  | "off_killzone" // outside the London/NY killzone → skip
   | "waiting_sweep"
   | "waiting_mss" // sweep found, no BOS/MSS and no IFVG flip yet
   | "waiting_fvg" // structure confirmed, no FVG / equilibrium entry yet
@@ -37,6 +40,9 @@ export interface AnalysisResult {
 const STAGE_LABEL: Record<SetupStage, string> = {
   no_data: "Zu wenig Daten",
   no_alignment: "Indizes nicht aligned — kein Trade",
+  long_only_skip: "Long-only (Index) — Short ignoriert",
+  htf_conflict: "Gegen 1H-Bias — kein Trade",
+  off_killzone: "Außerhalb der Killzone — kein Trade",
   waiting_sweep: "Warte auf Liquidity Sweep",
   waiting_mss: "Sweep erkannt — warte auf BOS / IFVG-Flip",
   waiting_fvg: "Struktur bestätigt — warte auf FVG / Equilibrium",
@@ -57,6 +63,8 @@ function isChoppy(candles: Candle[], n = 14): boolean {
 export interface StrategyOptions {
   sweepLookback: number; // how far back to look for the originating sweep
   k: number; // pivot strength
+  longOnly?: boolean; // indices drift up → only take longs (TJR V2 finding)
+  requireKillzone?: boolean; // only enter inside the London/NY killzones
 }
 export const DEFAULT_STRATEGY_OPTS: StrategyOptions = { sweepLookback: 10, k: 2 };
 
@@ -95,6 +103,19 @@ export function analyze(
   const bias: Bias = dir;
   const long = dir === "bullish";
   const sign = long ? 1 : -1;
+
+  // TJR V2 directional filters (from the "improved TJR" backtest):
+  //  • long-only (indices drift up → shorts bleed)
+  //  • higher-timeframe (1H) bias must agree with the setup
+  //  • optionally only inside the London/NY killzones
+  if (opts.longOnly && !long) return base("long_only_skip", { levels, sweep, bias });
+  if (ctx.htfBias && ctx.htfBias !== "range" &&
+      ((long && ctx.htfBias !== "up") || (!long && ctx.htfBias !== "down"))) {
+    return base("htf_conflict", { levels, sweep, bias });
+  }
+  if (opts.requireKillzone && !isKillzone(candles[candles.length - 1].time)) {
+    return base("off_killzone", { levels, sweep, bias });
+  }
 
   // C) structure confirmation — BOS/MSS **or** an inverse-FVG flip (TJR)
   const mss = detectStructureShift(candles, sweep.index, dir, opts.k);

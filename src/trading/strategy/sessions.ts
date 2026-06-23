@@ -25,6 +25,16 @@ export function isPreferredSession(s: SessionName): boolean {
   return s === "london" || s === "newyork_am" || s === "newyork_pm";
 }
 
+/**
+ * ICT killzones (the highest-probability windows TJR trades): London open
+ * 07:00–10:00 UTC and New York open 12:00–15:00 UTC. Used as an optional hard
+ * entry filter.
+ */
+export function isKillzone(timeSec: number): boolean {
+  const h = new Date(timeSec * 1000).getUTCHours();
+  return (h >= 7 && h < 10) || (h >= 12 && h < 15);
+}
+
 export const SESSION_LABEL: Record<SessionName, string> = {
   asia: "Asia",
   london: "London",
