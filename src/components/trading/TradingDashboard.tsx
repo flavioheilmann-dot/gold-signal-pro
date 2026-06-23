@@ -231,29 +231,26 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
           {s.error && <span className="text-down">⚠ {s.error}</span>}
         </div>
 
-        {/* TJR V2 Strategie-Filter (aus dem "improved TJR"-Video) */}
+        {/* TJR V1 Strategie-Profil — automatisch je Asset (read-only) */}
         <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
           <span className="uppercase tracking-wider">Strategie V1:</span>
-          <span className="rounded px-1.5 py-0.5 uppercase tracking-wider border border-primary/40 bg-primary/10 text-primary">
-            Exit: {eng.exitMode === "rr1to1" ? "1:1" : eng.exitMode === "trail" ? "Trailing" : "TP"}
-          </span>
           {([
-            ["longOnly", "Long-Only", eng.longOnly, eng.setLongOnly],
-            ["htf", "1H-Bias", eng.htfBiasFilter, eng.setHtfBiasFilter],
-            ["kz", "Killzone", eng.requireKillzone, eng.setRequireKillzone],
-          ] as const).map(([k, label, on, set]) => (
-            <button
-              key={k}
-              onClick={() => set(!on)}
-              title={`${label} ${on ? "aus" : "ein"}schalten`}
+            ["Exit", eng.exitMode === "rr1to1" ? "1:1" : eng.exitMode === "trail" ? "Trailing" : "TP", true],
+            ["Long-Only", eng.longOnly ? "an" : "aus", eng.longOnly],
+            ["1H-Bias", eng.htfBiasFilter ? "an" : "aus", eng.htfBiasFilter],
+            ["Killzone", eng.requireKillzone ? "an" : "aus", eng.requireKillzone],
+          ] as const).map(([label, val, on]) => (
+            <span
+              key={label}
               className={cn(
-                "rounded px-1.5 py-0.5 uppercase tracking-wider border transition-colors",
-                on ? "border-up/50 bg-up/10 text-up" : "border-border/50 text-muted-foreground hover:text-foreground"
+                "rounded px-1.5 py-0.5 uppercase tracking-wider border",
+                on ? "border-up/40 bg-up/10 text-up" : "border-border/50 text-muted-foreground"
               )}
             >
-              {label} {on ? "an" : "aus"}
-            </button>
+              {label}: {val}
+            </span>
           ))}
+          <span className="text-[9px] italic text-muted-foreground/70">automatisch je Asset</span>
         </div>
 
         {/* ICT chart with overlays (zoom + pan, enlarge) */}

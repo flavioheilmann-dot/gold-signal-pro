@@ -1,0 +1,151 @@
+//@version=5
+// ─────────────────────────────────────────────────────────────────────────
+// Gold Signal Pro — TJR V1 (Sweep → Break of Structure → Trailing/1:1)
+//
+// Bildet die V1-Strategie der App fürs TradingView-Backtesting nach:
+//   1) Liquidity Sweep  : Docht über ein Swing-Hoch / unter ein Swing-Tief,
+//                         Kerze schließt wieder INNERHALB (Stop-Hunt).
+//   2) Break of Structure: danach schließt der Kurs über das letzte Swing-Hoch
+//                         (Long) bzw. unter das letzte Swing-Tief (Short).
+//   3) Entry            : sofort zum Marktpreis auf dem BOS. SL hinter dem
+//                         Sweep-Docht.
+//   4) Exit             : "Trailing" = kein TP, Stop ab +1R nachziehen
+//                         (+1R→BE, +2R→+1R, …); "1:1" = fixes 1R-Ziel.
+//
+// Pro Asset wie in der App einstellen:
+//   Gold   5m  | Long-only AUS | Killzone AUS | Trailing | Risiko 0.5%
+//   BTC    1h  | Long-only AUS | Killzone AUS | Trailing | Risiko 2%
+//   US500  15m | Long-only AN  | Killzone AN  | Trailing | Risiko 1%
+//   US100  15m | Long-only AN  | Killzone AN  | Trailing | Risiko 1%
+//   GBPUSD 15m | Long-only AUS | Killzone AN  | 1:1      | Risiko 1%
+//
+// WICHTIG fürs ehrliche Ergebnis:
+//   • Kommission + Slippage in den Strategy-Tester-"Properties" realistisch
+//     setzen (Spreads killen sonst still die Edge — Kernaussage des Videos).
+//   • Vereinfachungen ggü. der App: Sweeps nur auf SWING-Hochs/Tiefs (nicht
+//     zusätzlich Session/PDH/Equal-Highs); KEIN US100×US500-Index-Alignment.
+//     Der Kern (Sweep→BOS→Trailing) ist identisch.
+//   Nur Analyse/Backtest — keine Anlageberatung.
+// ─────────────────────────────────────────────────────────────────────────
+strategy("Gold Signal Pro — TJR V1", overlay=true, initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     pyramiding=0, calc_on_every_tick=false,
+     commission_type=strategy.commission.percent, commission_value=0.0, slippage=0)
+
+// ════════ Inputs ════════
+grpS = "Strategie"
+k        = input.int(2,  "Swing-Stärke (Pivot k)", minval=1, group=grpS)
+bosMax   = input.int(12, "BOS: max. Bars nach Sweep", minval=1, group=grpS)
+longOnly = input.bool(true, "Long-only (für Indizes)", group=grpS)
+useKill  = input.bool(true, "Killzone-Filter (London/NY)", group=grpS)
+exitSel  = input.string("Trailing", "Exit-Stil", options=["Trailing", "1:1"], group=grpS)
+bufPct   = input.float(0.03, "SL-Puffer (% vom Preis)", minval=0.0, step=0.01, group=grpS) / 100.0
+riskPct  = input.float(1.0, "Risiko % pro Trade", minval=0.05, step=0.05, group="Risiko") / 100.0
+
+// ════════ Killzone (UTC): London 07–10, NY 12–15 ════════
+h = hour(time, "UTC")
+inKill = (h >= 7 and h < 10) or (h >= 12 and h < 15)
+killOk = not useKill or inKill
+
+// ════════ Swing-Pivots (Fraktal, k Bars später bestätigt) ════════
+ph = ta.pivothigh(high, k, k)
+pl = ta.pivotlow(low, k, k)
+var float swHigh = na
+var float swLow  = na
+if not na(ph)
+    swHigh := ph
+if not na(pl)
+    swLow := pl
+
+// ════════ Sweep + Break of Structure (V1) ════════
+var bool  bullP = false
+var float bullSweepLow = na
+var float bullRefHigh = na
+var int   bullBar = na
+var bool  bearP = false
+var float bearSweepHigh = na
+var float bearRefLow = na
+var int   bearBar = na
+
+// bullischer Sweep: Docht unter ein Swing-Tief, Schluss wieder darüber
+if not na(swLow) and low < swLow and close > swLow
+    bullP := true
+    bullSweepLow := low
+    bullRefHigh := swHigh
+    bullBar := bar_index
+// bearischer Sweep: Docht über ein Swing-Hoch, Schluss wieder darunter
+if not na(swHigh) and high > swHigh and close < swHigh
+    bearP := true
+    bearSweepHigh := high
+    bearRefLow := swLow
+    bearBar := bar_index
+
+// veraltete Setups verfallen lassen
+if bullP and (bar_index - bullBar) > bosMax
+    bullP := false
+if bearP and (bar_index - bearBar) > bosMax
+    bearP := false
+
+longSig  = bullP and not na(bullRefHigh) and close > bullRefHigh and killOk
+shortSig = bearP and not na(bearRefLow)  and close < bearRefLow  and killOk and not longOnly
+
+// ════════ Entry ════════
+var float entryP = na
+var float slP = na
+var float R = na
+var float trail = na
+var float maxR = na
+
+if longSig and strategy.position_size == 0
+    sl = bullSweepLow * (1.0 - bufPct)
+    dist = close - sl
+    if dist > 0
+        strategy.entry("Long", strategy.long, qty=(strategy.equity * riskPct) / dist)
+        entryP := close
+        slP := sl
+        R := dist
+        maxR := 0.0
+        trail := sl
+        bullP := false
+
+if shortSig and strategy.position_size == 0
+    sl = bearSweepHigh * (1.0 + bufPct)
+    dist = sl - close
+    if dist > 0
+        strategy.entry("Short", strategy.short, qty=(strategy.equity * riskPct) / dist)
+        entryP := close
+        slP := sl
+        R := dist
+        maxR := 0.0
+        trail := sl
+        bearP := false
+
+// ════════ Exit-Management ════════
+if strategy.position_size > 0
+    if exitSel == "1:1"
+        strategy.exit("xL", "Long", stop=slP, limit=entryP + R)
+    else
+        rNow = (high - entryP) / R
+        maxR := math.max(maxR, rNow)
+        lvl = math.floor(maxR)
+        if lvl >= 1
+            trail := math.max(trail, entryP + (lvl - 1) * R)
+        strategy.exit("xL", "Long", stop=trail)
+
+if strategy.position_size < 0
+    if exitSel == "1:1"
+        strategy.exit("xS", "Short", stop=slP, limit=entryP - R)
+    else
+        rNow = (entryP - low) / R
+        maxR := math.max(maxR, rNow)
+        lvl = math.floor(maxR)
+        if lvl >= 1
+            trail := math.min(trail, entryP - (lvl - 1) * R)
+        strategy.exit("xS", "Short", stop=trail)
+
+// ════════ Visuals ════════
+bgcolor(useKill and inKill ? color.new(color.blue, 92) : na, title="Killzone")
+plotshape(longSig  and strategy.position_size == 0, "Long",  shape.triangleup,   location.belowbar, color.new(color.lime, 0), size=size.tiny)
+plotshape(shortSig and strategy.position_size == 0, "Short", shape.triangledown, location.abovebar, color.new(color.red, 0),  size=size.tiny)
+activeStop = strategy.position_size != 0 ? (exitSel == "1:1" ? slP : trail) : na
+plot(activeStop, "Stop / Trail", color=color.new(color.red, 0), style=plot.style_linebr, linewidth=1)
