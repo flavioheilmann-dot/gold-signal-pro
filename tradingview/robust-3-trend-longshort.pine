@@ -1,0 +1,63 @@
+//@version=5
+// ─────────────────────────────────────────────────────────────────────────
+// GSP — Robust #3: Trendfolge LONG/SHORT (mehr Trades)  >>> TAGESCHART (1D) <<<
+//
+// Wie #1, aber: kleinerer Breakout (mehr Trades) + Short-Seite zuschaltbar.
+//   • Long:  Breakout über N-Bar-Hoch, (optional) über 200er-MA.
+//   • Short: Breakdown unter N-Bar-Tief, (optional) unter 200er-MA.
+//   • Exit:  Gegen-Donchian / Regimebruch + ATR-Schutzstop. Flips erlaubt.
+//
+// EHRLICH: Shorts auf AKTIEN-INDIZES verlieren meist (Aufwärts-Drift) → erwarte
+//   auf US500/US100 ein SCHLECHTERES Ergebnis als die Long-only #1. Shorts eher
+//   auf Rohstoffen/Krypto/FX testen. Mehr Trades ≠ besser. Vgl. "Buy & hold".
+// ─────────────────────────────────────────────────────────────────────────
+strategy("GSP — Trendfolge L/S", overlay=true, initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100, pyramiding=0,
+     calc_on_every_tick=false, commission_type=strategy.commission.percent,
+     commission_value=0.0, slippage=0)
+
+regimeLen   = input.int(200, "Regime-MA", minval=20)
+useRegime   = input.bool(true, "Regime-Filter (200er-MA) nutzen")
+allowShorts = input.bool(true, "Shorts erlauben")
+entryLen    = input.int(20, "Breakout-Länge (kleiner = mehr Trades)", minval=3)
+exitLen     = input.int(10, "Exit-Donchian-Länge", minval=2)
+atrLen      = input.int(14, "ATR-Länge", minval=2)
+atrMult     = input.float(2.0, "ATR-Schutzstop-Faktor", minval=0.5, step=0.1)
+
+sma  = ta.sma(close, regimeLen)
+atr  = ta.atr(atrLen)
+hiBO = ta.highest(close, entryLen)[1]
+loBO = ta.lowest(close, entryLen)[1]
+hiEX = ta.highest(high, exitLen)[1]
+loEX = ta.lowest(low, exitLen)[1]
+bull = not useRegime or close > sma
+bear = not useRegime or close < sma
+
+longSig  = not na(hiBO) and close > hiBO and bull and not na(atr)
+shortSig = allowShorts and not na(loBO) and close < loBO and bear and not na(atr)
+
+var float lStop = na
+var float sStop = na
+
+if longSig and strategy.position_size <= 0
+    strategy.entry("Long", strategy.long)
+    lStop := close - atrMult * atr
+    sStop := na
+if shortSig and strategy.position_size >= 0
+    strategy.entry("Short", strategy.short)
+    sStop := close + atrMult * atr
+    lStop := na
+
+if strategy.position_size > 0
+    if not na(lStop)
+        strategy.exit("xL", "Long", stop=lStop)
+    if close < loEX or (useRegime and close < sma)
+        strategy.close("Long", comment="Exit Long")
+if strategy.position_size < 0
+    if not na(sStop)
+        strategy.exit("xS", "Short", stop=sStop)
+    if close > hiEX or (useRegime and close > sma)
+        strategy.close("Short", comment="Exit Short")
+
+plot(sma, "Regime-MA", color=color.new(color.gray, 0))
+bgcolor(close > sma ? color.new(color.green, 95) : color.new(color.red, 95))
