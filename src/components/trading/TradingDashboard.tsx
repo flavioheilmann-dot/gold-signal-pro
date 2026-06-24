@@ -331,7 +331,7 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
                 )}
               </div>
             ) : (
-              <div className="mt-1 text-[11px] text-muted-foreground">Kein qualifiziertes Signal (≥70) — Engine analysiert.</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">Kein qualifiziertes Signal — Engine analysiert.</div>
             )}
           </div>
 

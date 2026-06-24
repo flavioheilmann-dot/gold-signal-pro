@@ -46,7 +46,8 @@ export function scoreSignal(p: ConfidenceInputs): ConfidenceResult {
   return { score: Math.max(0, Math.min(100, score)), reasons, warnings };
 }
 
-/** Only surface signals at/above this score. */
-export const MIN_SIGNAL_SCORE = 70;
+/** Only surface signals at/above this score. V1 has fewer confluence inputs
+ *  (no FVG/IFVG/LTF) so the realistic ceiling is ~65; 50 lets valid setups through. */
+export const MIN_SIGNAL_SCORE = 50;
 /** Only auto-execute paper trades at/above this score. */
-export const MIN_PAPER_SCORE = 75;
+export const MIN_PAPER_SCORE = 55;

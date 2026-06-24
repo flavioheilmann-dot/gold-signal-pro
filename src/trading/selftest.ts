@@ -116,9 +116,9 @@ const C = (o: number, h: number, l: number, cl: number, t = 0): Candle => ({ tim
   const bt = runBacktest(candles, "GOLD", DEFAULT_RISK);
   check("backtest returns numeric trades", typeof bt.trades === "number" && bt.equityCurve.length >= 1, bt.trades);
   check("winRate in [0,1]", bt.winRate >= 0 && bt.winRate <= 1, bt.winRate);
-  // TJR index-alignment gate: explicitly-unaligned index → no setup
-  const blocked = analyze(candles, { symbol: "US100", spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false, indexAligned: false }, DEFAULT_RISK);
-  check("indexAligned:false -> no_alignment, no signal", blocked.stage === "no_alignment" && blocked.signal === null, blocked.stage);
+  // TJR index-alignment: unaligned index still analyzes (soft gate via score, not hard block)
+  const unaligned = analyze(candles, { symbol: "US100", spreadPct: 0.02, newsRisk: false, contextConfirms: false, choppy: false, indexAligned: false }, DEFAULT_RISK);
+  check("indexAligned:false -> still analyzes (no hard block)", unaligned.stage !== "no_alignment", unaligned.stage);
   console.log(`     (backtest: ${bt.trades} trades, winRate ${(bt.winRate * 100).toFixed(0)}%, PF ${bt.profitFactor}, netPnl ${bt.netPnl})`);
 }
 

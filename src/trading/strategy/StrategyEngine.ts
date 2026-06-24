@@ -99,8 +99,7 @@ export function analyze(
   });
 
   if (candles.length < 60) return base("no_data");
-  // TJR's top rule: don't trade indices when NASDAQ and ES disagree
-  if (ctx.indexAligned === false) return base("no_alignment");
+  // TJR: prefer aligned indices — soft gate (score penalty, not hard block)
   const levels = detectLiquidityLevels(candles, opts.k);
 
   // A) + B) liquidity sweep

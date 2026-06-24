@@ -232,7 +232,7 @@ export class BackgroundEngine {
         symbol: this.opts.symbol,
         spreadPct,
         newsRisk: false, // hook a real news feed here
-        contextConfirms: align?.aligned ?? false, // index alignment = context confirmation
+        contextConfirms: align?.aligned ?? !isIndexSymbol(this.opts.symbol), // non-index assets pass by default
         choppy: false,
         indexAligned: align ? align.aligned : undefined,
         indexAlignDir: align ? align.dir : undefined,
