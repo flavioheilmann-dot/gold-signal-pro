@@ -57,6 +57,7 @@ import { useInterval } from "@/hooks/useInterval";
 import { useBroker } from "@/hooks/useBroker";
 import { useScanner } from "@/hooks/useScanner";
 import { useLiveQuote } from "@/hooks/useLiveQuote";
+import { useUsdChf } from "@/hooks/useUsdChf";
 import { beep, ensureNotificationPermission, notify } from "@/lib/alerts";
 
 const FALLBACK: Decision = { state: "WAIT", bias: "flat", confidence: 0, trend: "range", reason: "Lade Daten …" };
@@ -95,6 +96,7 @@ export default function App() {
 
   const { status: broker, account, positions, refresh: refreshBroker } = useBroker();
   const connected = !!broker?.connected;
+  const usdChf = useUsdChf(connected); // USD→CHF for exact account-currency sizing
   const { results: scan, scanning, refresh: refreshScan } = useScanner(connected, settings.params, 60000);
 
   useEffect(() => {
@@ -448,6 +450,7 @@ export default function App() {
             theme={theme}
             capital={settings.capital}
             riskPct={settings.riskPct}
+            usdChf={usdChf}
             onSignal={(sg) => setIctSig(sg)}
           />
 
@@ -507,6 +510,8 @@ export default function App() {
                   capital={settings.capital}
                   riskPct={settings.riskPct}
                   levels={sizingLevels}
+                  epic={ictSig?.symbol ?? active?.epic ?? "GOLD"}
+                  usdChf={usdChf}
                   onCapital={(v) => setSettings({ ...settings, capital: v })}
                   onRisk={(v) => setSettings({ ...settings, riskPct: v })}
                 />

@@ -2,11 +2,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn, fmtFr, fmtUsd } from "@/lib/utils";
 import type { TradeLevels } from "@/lib/indicators";
+import { sizeTrade } from "@/lib/sizing";
 
 interface Props {
   capital: number;
   riskPct: number;
   levels: TradeLevels;
+  epic?: string;
+  usdChf?: number | null;
   onCapital: (v: number) => void;
   onRisk: (v: number) => void;
 }
@@ -15,13 +18,22 @@ export function AccountPanel({
   capital,
   riskPct,
   levels,
+  epic = "GOLD",
+  usdChf = null,
   onCapital,
   onRisk,
 }: Props) {
-  const riskAmount = (capital * riskPct) / 100;
   const slDistance = Math.abs(levels.entry - levels.stopLoss);
-  const units = slDistance > 0 ? riskAmount / slDistance : 0;
-  const positionValue = units * levels.entry;
+  const sz = sizeTrade({
+    epic,
+    entry: levels.entry,
+    stopLoss: levels.stopLoss,
+    takeProfit1: levels.takeProfit1,
+    finalTarget: levels.takeProfit2,
+    capital,
+    riskPct,
+    usdChf,
+  });
 
   return (
     <div className="space-y-3">
@@ -47,14 +59,15 @@ export function AccountPanel({
       </div>
 
       <div className="space-y-1 rounded-lg border border-border bg-background/40 p-2.5">
-        <Stat label="Risiko-Betrag" value={fmtFr(riskAmount)} tone="down" />
-        <Stat label="SL-Abstand" value={`${fmtUsd(slDistance, 0)} $`} />
-        <Stat
-          label="Empf. Units"
-          value={units.toFixed(4)}
-          tone="gold"
-        />
-        <Stat label="Positionswert" value={`${fmtUsd(positionValue, 0)} $`} />
+        <Stat label="Risiko-Betrag" value={fmtFr(sz.riskAmount)} tone="down" />
+        <Stat label="SL-Abstand" value={`${fmtUsd(slDistance, 0)} Pkt`} />
+        <Stat label="Empf. Größe" value={sz.size >= 1 ? sz.size.toFixed(2) : sz.size.toFixed(4)} tone="gold" />
+        <Stat label="Positionswert" value={fmtFr(sz.notional)} />
+      </div>
+      <div className="text-[9px] leading-snug text-muted-foreground">
+        {sz.exact
+          ? `Exakt in CHF (USD→CHF ${usdChf?.toFixed(4)}).`
+          : "FX offline → 1:1-Schätzung."}
       </div>
     </div>
   );

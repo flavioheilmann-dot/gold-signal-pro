@@ -14,6 +14,7 @@ import { DEFAULT_RISK } from "../types";
 import type { DataProvider } from "../data/DataProvider";
 import { analyze, DEFAULT_STRATEGY_OPTS, type SetupStage } from "../strategy/StrategyEngine";
 import { indicesAligned, isIndexSymbol, structureTrend, type StructTrend } from "../strategy/tjr";
+import { newsRiskNow } from "../strategy/calendar";
 import { MIN_PAPER_SCORE } from "../strategy/confidence";
 import { RiskManager, type RiskState, type RiskStatus } from "../risk/RiskManager";
 import { PaperBroker } from "../paper/PaperBroker";
@@ -231,7 +232,7 @@ export class BackgroundEngine {
       const ctx: MarketContext = {
         symbol: this.opts.symbol,
         spreadPct,
-        newsRisk: false, // hook a real news feed here
+        newsRisk: newsRiskNow(), // high-impact US event blackout (NFP/CPI/FOMC)
         contextConfirms: align?.aligned ?? !isIndexSymbol(this.opts.symbol), // non-index assets pass by default
         choppy: false,
         indexAligned: align ? align.aligned : undefined,

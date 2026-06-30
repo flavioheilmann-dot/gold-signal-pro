@@ -92,12 +92,14 @@ export function TradingDashboard({
   theme = "dark",
   capital = 1000,
   riskPct = 1,
+  usdChf = null,
   onSignal,
 }: {
   defaultNtfyTopic?: string;
   theme?: "dark" | "light";
   capital?: number;
   riskPct?: number;
+  usdChf?: number | null;
   onSignal?: (sig: TradeSignal | null, symbol: string) => void;
 }) {
   const eng = useTradingEngine();
@@ -259,6 +261,8 @@ export function TradingDashboard({
           timeframe={eng.timeframe}
           capital={capital}
           riskPct={riskPct}
+          usdChf={usdChf}
+          indexAligned={s.indexAligned}
         />
 
         {/* TJR V1 Strategie-Profil — automatisch je Asset (read-only) */}

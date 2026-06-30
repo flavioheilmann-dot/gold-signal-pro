@@ -3,19 +3,25 @@
 // unmistakable, broker-grade trade plan: direction, Entry / SL / TP with
 // point + % distances, a visual risk:reward bar, a confidence meter, the
 // confluence reasons, an explicit management plan per exit mode, and — for
-// the user's REAL account — the position size, money-at-risk and potential
-// reward. One-click copy of the levels for manual entry on Capital.com.
+// the user's REAL CHF account — the exact position size, money-at-risk and
+// potential reward (FX-converted). Plus a high-impact-news gate, a pre-trade
+// checklist, and a beep/notification when a fresh setup goes ready.
 //
 // Display + decision-support only. No orders are placed from here.
 // ─────────────────────────────────────────────────────────────
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUpRight, ArrowDownRight, Copy, Check, Target, ShieldX,
-  Crosshair, Gauge, Hourglass, AlertTriangle, Info,
+  Crosshair, Gauge, Hourglass, AlertTriangle, Info, Bell, BellOff,
+  CalendarClock, CheckCircle2, Circle, XCircle, ListChecks,
 } from "lucide-react";
 import { cn, fmtFr } from "@/lib/utils";
 import type { Bias, TradeSignal, ExitMode } from "@/trading/types";
 import type { SetupStage } from "@/trading/strategy/StrategyEngine";
+import { sizeTrade } from "@/lib/sizing";
+import { newsBlackout, nextEvent, minutesUntil } from "@/trading/strategy/calendar";
+import { isIndexSymbol } from "@/trading/strategy/tjr";
+import { beep, notify, ensureNotificationPermission } from "@/lib/alerts";
 
 /** Sensible price precision by magnitude (indices/gold/BTC → 1, forex → 4). */
 function priceDecimals(p: number): number {
@@ -29,6 +35,11 @@ function fmtPrice(p: number): string {
 function fmtPts(p: number): string {
   const d = p >= 100 ? 0 : p >= 1 ? 1 : 4;
   return p.toLocaleString("de-CH", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function fmtMin(m: number): string {
+  if (m <= 0) return "jetzt";
+  if (m < 60) return `${m} Min`;
+  return `${Math.floor(m / 60)}h ${m % 60}min`;
 }
 
 function confTone(c: number): { label: string; cls: string; bar: string } {
@@ -66,6 +77,8 @@ const STAGE_HINT: Partial<Record<SetupStage, string>> = {
   ready: "Setup steht, aber die Konfidenz liegt unter der Schwelle — noch kein qualifiziertes Signal.",
 };
 
+const ALARM_KEY = "gsp_ticket_alarm_v1";
+
 interface Props {
   signal: TradeSignal | null;
   stage: SetupStage;
@@ -75,10 +88,73 @@ interface Props {
   timeframe: string;
   capital: number;
   riskPct: number;
+  usdChf: number | null;
+  indexAligned: boolean | null;
 }
 
-export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe, capital, riskPct }: Props) {
+/** Compact high-impact-news strip — shared by both states. */
+function NewsStrip() {
+  const bl = newsBlackout();
+  if (bl.active && bl.event) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-down/50 bg-down/10 px-3 py-2 text-[11px] font-medium text-down">
+        <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+        News-Sperre: {bl.event.title} — kein Trade ins Event hinein.
+      </div>
+    );
+  }
+  const nx = nextEvent();
+  if (nx) {
+    const m = minutesUntil(nx);
+    if (m > 0 && m <= 90) {
+      return (
+        <div className="flex items-center gap-2 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2 text-[11px] text-gold">
+          <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+          Achtung: {nx.title} in {fmtMin(m)} — Volatilität erwartet.
+        </div>
+      );
+    }
+  }
+  return null;
+}
+
+export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe, capital, riskPct, usdChf, indexAligned }: Props) {
   const [copied, setCopied] = useState(false);
+  const [alarmOn, setAlarmOn] = useState(() => {
+    try { return localStorage.getItem(ALARM_KEY) !== "0"; } catch { return true; }
+  });
+  const [done, setDone] = useState<Record<string, boolean>>({});
+  const [fresh, setFresh] = useState(false);
+  const lastAlarmId = useRef("");
+  const alarmOnRef = useRef(alarmOn);
+  alarmOnRef.current = alarmOn;
+  const sigId = signal?.id ?? null;
+
+  // new qualified signal → reset checklist, pulse, and beep/notify (once per id)
+  useEffect(() => {
+    if (!signal) return;
+    setDone({});
+    if (signal.id === lastAlarmId.current) return;
+    lastAlarmId.current = signal.id;
+    setFresh(true);
+    const t = setTimeout(() => setFresh(false), 6000);
+    if (alarmOnRef.current) {
+      beep(signal.direction === "BUY");
+      notify(
+        `${signal.direction === "BUY" ? "🟢 KAUFEN" : "🔴 VERKAUFEN"} ${signal.symbol}`,
+        `Entry ${signal.entry} · SL ${signal.stopLoss} · TP ${signal.takeProfit1} · ${signal.confidence}/100`
+      );
+    }
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sigId]);
+
+  const toggleAlarm = () => {
+    const next = !alarmOn;
+    setAlarmOn(next);
+    try { localStorage.setItem(ALARM_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+    if (next) { ensureNotificationPermission(); beep(true); }
+  };
 
   // ── waiting / no qualified signal ─────────────────────────
   if (!signal) {
@@ -101,7 +177,8 @@ export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe
             <div className="text-xs text-muted-foreground">{STAGE_HINT[stage] ?? "Kein qualifiziertes Setup — die Engine analysiert."}</div>
           </div>
         </div>
-        <div className="mt-3 rounded-lg border border-gold/25 bg-gold/5 px-3 py-2 text-[11px] text-gold">
+        <div className="mt-3"><NewsStrip /></div>
+        <div className="mt-2 rounded-lg border border-gold/25 bg-gold/5 px-3 py-2 text-[11px] text-gold">
           Kein Trade — abwarten. Die Strategie handelt nur bei hoher Konfidenz; Geduld ist Teil des Edges.
         </div>
       </div>
@@ -125,14 +202,30 @@ export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe
 
   const pctOf = (lvl: number) => (Math.abs(lvl - entry) / entry) * 100;
 
-  // ── real-account sizing (same convention as the risk manager) ──
-  const riskAmount = (capital * riskPct) / 100;
-  const units = riskDist > 0 ? riskAmount / riskDist : 0;
-  const notional = units * entry;
-  const rewardTP1 = units * Math.abs(takeProfit1 - entry);
-  const rewardFinal = units * rewardDist;
+  // ── real-account sizing (FX-converted to CHF) ──
+  const sz = sizeTrade({ epic: symbol, entry, stopLoss, takeProfit1, finalTarget, capital, riskPct, usdChf });
 
   const ct = confTone(signal.confidence);
+  const bl = newsBlackout();
+
+  // ── pre-trade checklist ──
+  const hasReason = (re: RegExp) => signal.reasons.some((r) => re.test(r));
+  const noWarn = (re: RegExp) => !signal.warnings.some((r) => re.test(r));
+  const preferredSession = ["london", "newyork_am", "newyork_pm"].includes(signal.session);
+  const isIdx = isIndexSymbol(symbol);
+  type Chk = { label: string; status: "ok" | "warn" | "na" };
+  const autoChecks: Chk[] = [
+    { label: "Liquidity Sweep + Struktur", status: hasReason(/Sweep/) && hasReason(/Structure|BOS|IFVG/) ? "ok" : "warn" },
+    { label: "Session aktiv (London/NY)", status: preferredSession ? "ok" : "warn" },
+    { label: "Indizes aligned (NASDAQ×S&P)", status: isIdx ? (indexAligned ? "ok" : "warn") : "na" },
+    { label: `Chance-Risiko ≥ 1:2`, status: signal.riskReward >= 2 ? "ok" : "warn" },
+    { label: "Spread / Markt sauber", status: noWarn(/Spread|Choppy/) ? "ok" : "warn" },
+    { label: "Kein High-Impact-News-Fenster", status: bl.active ? "warn" : "ok" },
+  ];
+  const manualItems = ["Größe auf Capital.com gesetzt", "SL & TP eingetragen", "Order platziert"];
+  const allAuto = autoChecks.every((c) => c.status !== "warn");
+  const allManual = manualItems.every((_, i) => done[`m${i}`]);
+  const readyToGo = allAuto && allManual && !bl.active;
 
   const copyLevels = async () => {
     const lines = [
@@ -147,22 +240,21 @@ export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe
       await navigator.clipboard.writeText(lines.join("\n"));
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* clipboard blocked — ignore */
-    }
+    } catch { /* clipboard blocked — ignore */ }
   };
 
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl border-2 p-4 shadow-lg",
-        long ? "border-up/50 bg-up/[0.04]" : "border-down/50 bg-down/[0.04]"
+        "relative overflow-hidden rounded-xl border-2 p-4 shadow-lg transition-shadow",
+        long ? "border-up/50 bg-up/[0.04]" : "border-down/50 bg-down/[0.04]",
+        fresh && (long ? "ring-2 ring-up/60 animate-pulse" : "ring-2 ring-down/60 animate-pulse")
       )}
     >
       {/* glow */}
       <div className={cn("pointer-events-none absolute -top-16 right-0 h-32 w-32 rounded-full blur-3xl", long ? "bg-up/20" : "bg-down/20")} />
 
-      {/* header: direction + confidence + copy */}
+      {/* header: direction + alarm + copy */}
       <div className="relative flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <span className={cn("grid h-10 w-10 place-items-center rounded-lg border", long ? "border-up/40 bg-up/10 text-up" : "border-down/40 bg-down/10 text-down")}>
@@ -177,14 +269,27 @@ export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe
             </div>
           </div>
         </div>
-        <button
-          onClick={copyLevels}
-          className="flex items-center gap-1.5 rounded-md border border-border/70 bg-background/60 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-primary"
-          title="Entry / SL / TP in die Zwischenablage kopieren"
-        >
-          {copied ? <><Check className="h-3.5 w-3.5 text-up" /> kopiert</> : <><Copy className="h-3.5 w-3.5" /> Levels kopieren</>}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={toggleAlarm}
+            title={alarmOn ? "Alarm bei neuem Signal: an" : "Alarm bei neuem Signal: aus"}
+            className={cn("flex items-center gap-1 rounded-md border px-2 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-colors",
+              alarmOn ? "border-up/40 bg-up/10 text-up" : "border-border/70 bg-background/60 text-muted-foreground hover:text-foreground")}
+          >
+            {alarmOn ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />} Alarm
+          </button>
+          <button
+            onClick={copyLevels}
+            className="flex items-center gap-1.5 rounded-md border border-border/70 bg-background/60 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-primary"
+            title="Entry / SL / TP in die Zwischenablage kopieren"
+          >
+            {copied ? <><Check className="h-3.5 w-3.5 text-up" /> kopiert</> : <><Copy className="h-3.5 w-3.5" /> Levels kopieren</>}
+          </button>
+        </div>
       </div>
+
+      {/* news gate (most important — right under the header) */}
+      <div className="relative mt-3"><NewsStrip /></div>
 
       {/* confidence meter */}
       <div className="relative mt-3">
@@ -219,7 +324,6 @@ export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe
           <div className="h-full bg-down/70" style={{ width: `${riskW}%` }} />
           <div className="h-full bg-up/70" style={{ width: `${100 - riskW}%` }} />
         </div>
-        {/* entry marker + TP1 tick */}
         <div className="relative h-0">
           <div className="absolute -top-3 h-3 w-0.5 -translate-x-1/2 bg-foreground" style={{ left: `${riskW}%` }} title="Entry" />
           {!singleTarget && (
@@ -233,20 +337,25 @@ export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe
         </div>
       </div>
 
-      {/* real-account sizing */}
+      {/* real-account sizing (FX → CHF) */}
       <div className="relative mt-3 rounded-lg border border-border/60 bg-background/50 p-3">
         <div className="mb-2 flex items-center justify-between">
           <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Für dein Konto · {fmtFr(capital)} · Risiko {riskPct}%</span>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Metric label="Risiko (1R)" value={fmtFr(riskAmount)} tone="down" />
-          <Metric label="CFD-Größe" value={units >= 1 ? units.toFixed(2) : units.toFixed(4)} tone="gold" sub="Einheiten" />
-          <Metric label={singleTarget ? "Gewinn @Ziel" : "Gewinn @TP1"} value={fmtFr(singleTarget ? rewardFinal : rewardTP1)} tone="up" />
-          <Metric label={exit === "trail" ? "Gewinn ~2R" : "Gewinn @TP2"} value={fmtFr(rewardFinal)} tone="up" sub={exit === "trail" ? "Richtwert" : undefined} />
+          <Metric label="Risiko (1R)" value={fmtFr(sz.riskAmount)} tone="down" />
+          <Metric label="CFD-Größe" value={sz.size >= 1 ? sz.size.toFixed(2) : sz.size.toFixed(4)} tone="gold" sub="Einheiten" />
+          <Metric label={singleTarget ? "Gewinn @Ziel" : "Gewinn @TP1"} value={fmtFr(singleTarget ? sz.rewardFinal : sz.rewardTP1)} tone="up" />
+          <Metric label={exit === "trail" ? "Gewinn ~2R" : "Gewinn @TP2"} value={fmtFr(sz.rewardFinal)} tone="up" sub={exit === "trail" ? "Richtwert" : undefined} />
         </div>
         <div className="mt-1.5 flex items-start gap-1 text-[9px] leading-snug text-muted-foreground">
           <Info className="mt-0.5 h-2.5 w-2.5 shrink-0" />
-          <span>Positionswert ~{fmtFr(notional)}. Größe = Risiko ÷ SL-Abstand (1 Einheit ≈ 1 Fr/Punkt). Auf Capital.com Punktwert &amp; CHF/USD-Umrechnung prüfen.</span>
+          <span>
+            Positionswert ~{fmtFr(sz.notional)}.{" "}
+            {sz.exact
+              ? `Exakt in CHF gerechnet (USD→CHF ${usdChf?.toFixed(4)}).`
+              : "FX-Kurs offline → 1:1-Schätzung; auf Capital.com Punktwert prüfen."}
+          </span>
         </div>
       </div>
 
@@ -256,6 +365,33 @@ export function TradeTicket({ signal, stage, stageLabel, bias, symbol, timeframe
         <p className="mt-1 text-xs leading-relaxed text-foreground/85">
           {managementPlan(exit, fmtPrice(takeProfit1), fmtPrice(takeProfit2), fmtPrice(stopLoss))}
         </p>
+      </div>
+
+      {/* pre-trade checklist */}
+      <div className="relative mt-3 rounded-lg border border-border/60 bg-background/50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            <ListChecks className="h-3 w-3" /> Pre-Trade-Checkliste
+          </span>
+          {readyToGo && <span className="rounded bg-up/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-up">bereit</span>}
+        </div>
+        <div className="grid gap-1 sm:grid-cols-2">
+          {autoChecks.map((c) => (
+            <div key={c.label} className="flex items-center gap-1.5 text-[11px]">
+              {c.status === "ok" ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-up" />
+                : c.status === "warn" ? <XCircle className="h-3.5 w-3.5 shrink-0 text-down" />
+                : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />}
+              <span className={c.status === "warn" ? "text-down" : c.status === "na" ? "text-muted-foreground/60" : "text-foreground/80"}>{c.label}</span>
+            </div>
+          ))}
+          {manualItems.map((label, i) => (
+            <button key={label} onClick={() => setDone((d) => ({ ...d, [`m${i}`]: !d[`m${i}`] }))}
+              className="flex items-center gap-1.5 text-left text-[11px]">
+              {done[`m${i}`] ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-up" /> : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+              <span className={done[`m${i}`] ? "text-foreground/80" : "text-muted-foreground"}>{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* reasons + warnings */}
