@@ -49,6 +49,8 @@ import {
 } from "@/lib/signalEngine";
 import { computeOutlook, combineOutlook } from "@/lib/outlook";
 import { GOLD_NEWS, newsBias } from "@/lib/news";
+import type { TradeSignal } from "@/trading/types";
+import type { TradeLevels } from "@/lib/signalEngine";
 import { DEFAULT_SETTINGS, LS_KEYS, type AppSettings, type HistoryEntry } from "@/lib/config";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useInterval } from "@/hooks/useInterval";
@@ -88,6 +90,8 @@ export default function App() {
   const [scanAt, setScanAt] = useState<number | null>(null);
   const [strongAlert, setStrongAlert] = useState<StrongAlertData | null>(null);
   const [posAlert, setPosAlert] = useState<PositionAlertData | null>(null);
+  // live ICT signal lifted from the TradingDashboard → drives the sidebar sizer
+  const [ictSig, setIctSig] = useState<TradeSignal | null>(null);
 
   const { status: broker, account, positions, refresh: refreshBroker } = useBroker();
   const connected = !!broker?.connected;
@@ -189,9 +193,28 @@ export default function App() {
     return setup;
   }, [active, snap]);
 
+  // sidebar position-sizer prefers the LIVE ICT signal (the strategy the user
+  // actually trades); falls back to the Box levels only when no ICT signal.
+  const ictSizingLevels = useMemo<TradeLevels | null>(() => {
+    if (!ictSig) return null;
+    const long = ictSig.direction === "BUY";
+    const risk = Math.abs(ictSig.entry - ictSig.stopLoss);
+    return {
+      direction: long ? "long" : "short",
+      entry: ictSig.entry,
+      stopLoss: ictSig.stopLoss,
+      takeProfit1: ictSig.takeProfit1,
+      takeProfit2: ictSig.takeProfit2,
+      rr1: risk > 0 ? Math.abs(ictSig.takeProfit1 - ictSig.entry) / risk : 0,
+      rr2: risk > 0 ? Math.abs(ictSig.takeProfit2 - ictSig.entry) / risk : 0,
+      leverage: "so niedrig wie möglich",
+      atr: 0,
+    };
+  }, [ictSig]);
+
   const sizingLevels = useMemo(
-    () => levels ?? (snap?.atr && active ? levelsFor("BUY", active.price, snap.atr, settings.params) : null),
-    [levels, snap, active, settings.params]
+    () => ictSizingLevels ?? levels ?? (snap?.atr && active ? levelsFor("BUY", active.price, snap.atr, settings.params) : null),
+    [ictSizingLevels, levels, snap, active, settings.params]
   );
 
   const marketStatus = useMemo(() => getMarketStatus(now), [now]);
@@ -420,7 +443,13 @@ export default function App() {
             </div>
           )}
 
-          <TradingDashboard defaultNtfyTopic={settings.ntfyTopic} theme={theme} />
+          <TradingDashboard
+            defaultNtfyTopic={settings.ntfyTopic}
+            theme={theme}
+            capital={settings.capital}
+            riskPct={settings.riskPct}
+            onSignal={(sg) => setIctSig(sg)}
+          />
 
           {/* Box-Strategie: nur noch stille Referenz, klappbar */}
           <details className="rounded-lg border border-border/50 bg-card/40">
@@ -470,7 +499,7 @@ export default function App() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Position Size (lokal)</CardTitle>
+              <CardTitle>{ictSig ? "Positionsgröße · Live-Signal" : "Positionsgröße (Referenz)"}</CardTitle>
             </CardHeader>
             <CardContent>
               {sizingLevels ? (

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, Play, Square, Cpu, ShieldAlert, Target, ListChecks, FlaskConical,
+  Activity, Play, Square, Cpu, ShieldAlert, ListChecks, FlaskConical,
   TrendingUp, TrendingDown, AlertTriangle, Bell, Database, Maximize2, Minimize2, LineChart,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,11 +9,12 @@ import { cn } from "@/lib/utils";
 import { useTradingEngine } from "@/trading/engine/useTradingEngine";
 import { TJR_ASSETS } from "@/lib/assets";
 import { ChartPanel, type ChartLevels, type ChartLayers, DEFAULT_LAYERS } from "@/components/ChartPanel";
+import { TradeTicket } from "@/components/trading/TradeTicket";
 import { requestNotifyPermission } from "@/trading/notifications/notify";
 import { liveTradingEnabled } from "@/trading/broker/BrokerAdapter";
 import type { EngineStatus } from "@/trading/engine/BackgroundEngine";
 import type { BacktestResult } from "@/trading/backtest/backtest";
-import type { Bias, PaperTrade, TradeSignal } from "@/trading/types";
+import type { PaperTrade, TradeSignal } from "@/trading/types";
 
 function ago(ts: number | null): string {
   if (!ts) return "—";
@@ -21,10 +22,6 @@ function ago(ts: number | null): string {
   return s < 60 ? `vor ${s}s` : `vor ${Math.floor(s / 60)}min`;
 }
 const money = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}`;
-
-function biasTone(b: Bias) {
-  return b === "bullish" ? "text-up" : b === "bearish" ? "text-down" : "text-muted-foreground";
-}
 
 function Pill({ label, tone }: { label: string; tone: string }) {
   return <span className={cn("rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider", tone)}>{label}</span>;
@@ -90,7 +87,19 @@ function Stat({ label, value, tone, sub }: { label: string; value: string; tone?
   );
 }
 
-export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { defaultNtfyTopic?: string; theme?: "dark" | "light" }) {
+export function TradingDashboard({
+  defaultNtfyTopic = "",
+  theme = "dark",
+  capital = 1000,
+  riskPct = 1,
+  onSignal,
+}: {
+  defaultNtfyTopic?: string;
+  theme?: "dark" | "light";
+  capital?: number;
+  riskPct?: number;
+  onSignal?: (sig: TradeSignal | null, symbol: string) => void;
+}) {
   const eng = useTradingEngine();
   const s: EngineStatus | null = eng.status;
   const [notifyOn, setNotifyOn] = useState(false);
@@ -114,6 +123,15 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
       : null,
     [sig]
   );
+
+  // lift the live ICT signal to the parent (sidebar position-sizer) without
+  // re-firing on every per-second status tick: only when the signal id changes.
+  const onSignalRef = useRef(onSignal);
+  onSignalRef.current = onSignal;
+  const sigSymbol = eng.symbol;
+  useEffect(() => {
+    onSignalRef.current?.(sig, sigSymbol);
+  }, [sig, sigSymbol]);
 
   if (!s) return <div className="skeleton h-40 w-full" />;
 
@@ -231,6 +249,18 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
           {s.error && <span className="text-down">⚠ {s.error}</span>}
         </div>
 
+        {/* ★ HERO: the trade ticket — entry / SL / TP + account sizing */}
+        <TradeTicket
+          signal={sig}
+          stage={s.stage}
+          stageLabel={s.stageLabel}
+          bias={s.bias}
+          symbol={eng.symbol}
+          timeframe={eng.timeframe}
+          capital={capital}
+          riskPct={riskPct}
+        />
+
         {/* TJR V1 Strategie-Profil — automatisch je Asset (read-only) */}
         <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
           <span className="uppercase tracking-wider">Strategie V1:</span>
@@ -308,50 +338,22 @@ export function TradingDashboard({ defaultNtfyTopic = "", theme = "dark" }: { de
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          {/* Active setup */}
-          <div className="rounded-lg border border-border/60 p-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                <Target className="h-3 w-3" /> Active Setup
-              </span>
-              <span className={cn("font-mono text-[10px] font-bold uppercase", biasTone(s.bias))}>{s.bias}</span>
-            </div>
-            <div className="text-sm font-semibold">{s.stageLabel}</div>
-            {sig ? (
-              <div className="mt-2 space-y-1.5">
-                <SignalRow s={sig} />
-                {!!sig.reasons.length && (
-                  <div className="text-[10px] text-muted-foreground">{sig.reasons.join(" · ")}</div>
-                )}
-                {!!sig.warnings.length && (
-                  <div className="flex items-start gap-1 text-[10px] text-gold">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {sig.warnings.join(" · ")}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="mt-1 text-[11px] text-muted-foreground">Kein qualifiziertes Signal — Engine analysiert.</div>
-            )}
+        {/* Risk status (Paper-Konto) */}
+        <div className="rounded-lg border border-border/60 p-3">
+          <div className="mb-1.5 flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            <ShieldAlert className="h-3 w-3" /> Risk Status · Paper-Konto
           </div>
-
-          {/* Risk status */}
-          <div className="rounded-lg border border-border/60 p-3">
-            <div className="mb-1.5 flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              <ShieldAlert className="h-3 w-3" /> Risk Status
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              <Stat label="Equity" value={s.risk.equity.toFixed(2)} sub="Paper-Konto" />
-              <Stat label="Daily PnL" value={`${money(s.risk.dayPnl)} (${s.risk.dayPnlPct}%)`} tone={s.risk.dayPnl >= 0 ? "text-up" : "text-down"} />
-              <Stat label="Trades heute" value={`${s.risk.dayTrades}/${s.risk.maxTrades}`} sub={`${s.risk.consecLosses} Verluste i.F.`} />
-              <Stat label="Daily-Loss-Budget" value={`${s.risk.dailyLossUsedPct}%`} tone={s.risk.dailyLossUsedPct >= 100 ? "text-down" : s.risk.dailyLossUsedPct >= 60 ? "text-gold" : "text-up"} sub={`Limit ${s.risk.dailyLossLimit}`} />
-            </div>
-            {!s.risk.canTrade && (
-              <div className="mt-1.5 flex items-center gap-1 rounded border border-down/30 bg-down/10 px-2 py-1 text-[10px] text-down">
-                <AlertTriangle className="h-3 w-3" /> Gesperrt: {s.risk.blockReason}
-              </div>
-            )}
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <Stat label="Equity" value={s.risk.equity.toFixed(2)} sub="Paper-Konto" />
+            <Stat label="Daily PnL" value={`${money(s.risk.dayPnl)} (${s.risk.dayPnlPct}%)`} tone={s.risk.dayPnl >= 0 ? "text-up" : "text-down"} />
+            <Stat label="Trades heute" value={`${s.risk.dayTrades}/${s.risk.maxTrades}`} sub={`${s.risk.consecLosses} Verluste i.F.`} />
+            <Stat label="Daily-Loss-Budget" value={`${s.risk.dailyLossUsedPct}%`} tone={s.risk.dailyLossUsedPct >= 100 ? "text-down" : s.risk.dailyLossUsedPct >= 60 ? "text-gold" : "text-up"} sub={`Limit ${s.risk.dailyLossLimit}`} />
           </div>
+          {!s.risk.canTrade && (
+            <div className="mt-1.5 flex items-center gap-1 rounded border border-down/30 bg-down/10 px-2 py-1 text-[10px] text-down">
+              <AlertTriangle className="h-3 w-3" /> Gesperrt: {s.risk.blockReason}
+            </div>
+          )}
         </div>
 
         {/* Paper trades */}
