@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1783252120411,
+  "updatedAt": 1783358295296,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,11 +9,11 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1783252120411
+    "updatedAt": 1783358295296
   },
   "ict": {
-    "total": 2,
-    "open": 0,
+    "total": 4,
+    "open": 2,
     "closed": 2,
     "wins": 1,
     "losses": 0,
@@ -21,8 +21,8 @@
     "sumR": 0.48,
     "byStrategy": {
       "ICT": {
-        "total": 2,
-        "open": 0,
+        "total": 4,
+        "open": 2,
         "wins": 1,
         "losses": 0,
         "sumR": 0.48,
@@ -30,9 +30,45 @@
         "avgR": 0.48
       }
     },
-    "updatedAt": 1783252120411
+    "updatedAt": 1783358295296
   },
   "recent": [
+    {
+      "id": "ICT:GOLD:1783341000",
+      "strategy": "ICT",
+      "epic": "GOLD",
+      "name": "GOLD",
+      "dir": "SHORT",
+      "entry": 4144.24,
+      "sl": 4159.72,
+      "tp1": 4128.76,
+      "tp2": 4113.28,
+      "confidence": 75,
+      "openedAt": 1783341000,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
+    {
+      "id": "ICT:BTCUSD:1783339200",
+      "strategy": "ICT",
+      "epic": "BTCUSD",
+      "name": "BTCUSD",
+      "dir": "SHORT",
+      "entry": 62014.65,
+      "sl": 62966.26,
+      "tp1": 61063.04,
+      "tp2": 60111.44,
+      "confidence": 75,
+      "openedAt": 1783339200,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
     {
       "id": "ICT:GOLD:1782322200",
       "strategy": "ICT",
