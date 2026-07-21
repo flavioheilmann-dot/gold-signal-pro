@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1784539659121,
+  "updatedAt": 1784623119561,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,30 +9,66 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1784539659121
+    "updatedAt": 1784623119561
   },
   "ict": {
-    "total": 13,
-    "open": 2,
-    "closed": 11,
-    "wins": 4,
+    "total": 15,
+    "open": 3,
+    "closed": 12,
+    "wins": 5,
     "losses": 3,
-    "winRate": 0.57,
-    "sumR": -1.14,
+    "winRate": 0.63,
+    "sumR": 0.34,
     "byStrategy": {
       "ICT": {
-        "total": 13,
-        "open": 2,
-        "wins": 4,
+        "total": 15,
+        "open": 3,
+        "wins": 5,
         "losses": 3,
-        "sumR": -1.14,
-        "winRate": 0.57,
-        "avgR": -0.16
+        "sumR": 0.34,
+        "winRate": 0.63,
+        "avgR": 0.04
       }
     },
-    "updatedAt": 1784539659121
+    "updatedAt": 1784623119561
   },
   "recent": [
+    {
+      "id": "ICT:BTCUSD:1784563200",
+      "strategy": "ICT",
+      "epic": "BTCUSD",
+      "name": "BTCUSD",
+      "dir": "LONG",
+      "entry": 65396.05,
+      "sl": 64318.85,
+      "tp1": 66473.25,
+      "tp2": 67550.45,
+      "confidence": 60,
+      "openedAt": 1784563200,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
+    {
+      "id": "ICT:GBPUSD:1784550600",
+      "strategy": "ICT",
+      "epic": "GBPUSD",
+      "name": "GBPUSD",
+      "dir": "SHORT",
+      "entry": 1.35,
+      "sl": 1.35,
+      "tp1": 1.34,
+      "tp2": 1.34,
+      "confidence": 50,
+      "openedAt": 1784550600,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
     {
       "id": "ICT:GOLD:1784533500",
       "strategy": "ICT",
@@ -45,10 +81,10 @@
       "tp2": 4026,
       "confidence": 75,
       "openedAt": 1784533500,
-      "status": "open",
-      "rMultiple": null,
-      "hitTP1": false,
-      "closedAt": null,
+      "status": "win",
+      "rMultiple": 1.48,
+      "hitTP1": true,
+      "closedAt": 1784535300,
       "confluence": false
     },
     {
