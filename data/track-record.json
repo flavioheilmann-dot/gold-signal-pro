@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1786606987883,
+  "updatedAt": 1786693266105,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,20 +9,20 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1786606987883
+    "updatedAt": 1786693266105
   },
   "ict": {
-    "total": 52,
-    "open": 1,
-    "closed": 51,
+    "total": 55,
+    "open": 3,
+    "closed": 52,
     "wins": 20,
     "losses": 16,
     "winRate": 0.56,
     "sumR": -2.22,
     "byStrategy": {
       "ICT": {
-        "total": 52,
-        "open": 1,
+        "total": 55,
+        "open": 3,
         "wins": 20,
         "losses": 16,
         "sumR": -2.22,
@@ -30,9 +30,63 @@
         "avgR": -0.06
       }
     },
-    "updatedAt": 1786606987883
+    "updatedAt": 1786693266105
   },
   "recent": [
+    {
+      "id": "ICT:BTCUSD:1786644000",
+      "strategy": "ICT",
+      "epic": "BTCUSD",
+      "name": "BTCUSD",
+      "dir": "SHORT",
+      "entry": 63066.4,
+      "sl": 63904.78,
+      "tp1": 62228.02,
+      "tp2": 61389.63,
+      "confidence": 60,
+      "openedAt": 1786644000,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
+    {
+      "id": "ICT:BTCUSD:1786640400",
+      "strategy": "ICT",
+      "epic": "BTCUSD",
+      "name": "BTCUSD",
+      "dir": "SHORT",
+      "entry": 63103.8,
+      "sl": 63904.8,
+      "tp1": 62302.8,
+      "tp2": 61501.8,
+      "confidence": 60,
+      "openedAt": 1786640400,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
+    {
+      "id": "ICT:US100:1786628700",
+      "strategy": "ICT",
+      "epic": "US100",
+      "name": "US100",
+      "dir": "LONG",
+      "entry": 29983.65,
+      "sl": 29721.11,
+      "tp1": 30246.19,
+      "tp2": 30508.73,
+      "confidence": 75,
+      "openedAt": 1786628700,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
     {
       "id": "ICT:GOLD:1786566000",
       "strategy": "ICT",
@@ -225,10 +279,10 @@
       "tp2": 1.35,
       "confidence": 50,
       "openedAt": 1786369500,
-      "status": "open",
-      "rMultiple": null,
+      "status": "breakeven",
+      "rMultiple": 0,
       "hitTP1": false,
-      "closedAt": null,
+      "closedAt": 1786628895,
       "confluence": false
     },
     {
@@ -427,60 +481,6 @@
       "rMultiple": 0,
       "hitTP1": false,
       "closedAt": 1786027157,
-      "confluence": false
-    },
-    {
-      "id": "ICT:GOLD:1785527100",
-      "strategy": "ICT",
-      "epic": "GOLD",
-      "name": "GOLD",
-      "dir": "LONG",
-      "entry": 4053.81,
-      "sl": 4047.72,
-      "tp1": 4059.9,
-      "tp2": 4065.98,
-      "confidence": 60,
-      "openedAt": 1785527100,
-      "status": "loss",
-      "rMultiple": -1.02,
-      "hitTP1": false,
-      "closedAt": 1785528000,
-      "confluence": false
-    },
-    {
-      "id": "ICT:GBPUSD:1785401100",
-      "strategy": "ICT",
-      "epic": "GBPUSD",
-      "name": "GBPUSD",
-      "dir": "LONG",
-      "entry": 1.34,
-      "sl": 1.33,
-      "tp1": 1.34,
-      "tp2": 1.34,
-      "confidence": 50,
-      "openedAt": 1785401100,
-      "status": "win",
-      "rMultiple": -0.02,
-      "hitTP1": true,
-      "closedAt": 1785407400,
-      "confluence": false
-    },
-    {
-      "id": "ICT:US100:1785309300",
-      "strategy": "ICT",
-      "epic": "US100",
-      "name": "US100",
-      "dir": "LONG",
-      "entry": 27783.15,
-      "sl": 27650.81,
-      "tp1": 27915.49,
-      "tp2": 28047.83,
-      "confidence": 75,
-      "openedAt": 1785309300,
-      "status": "loss",
-      "rMultiple": -1.02,
-      "hitTP1": false,
-      "closedAt": 1785332700,
       "confluence": false
     }
   ]
