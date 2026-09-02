@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1788262118558,
+  "updatedAt": 1788346978000,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,30 +9,48 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1788262118558
+    "updatedAt": 1788346978000
   },
   "ict": {
-    "total": 89,
+    "total": 90,
     "open": 1,
-    "closed": 88,
+    "closed": 89,
     "wins": 33,
-    "losses": 27,
-    "winRate": 0.55,
-    "sumR": -5.2,
+    "losses": 28,
+    "winRate": 0.54,
+    "sumR": -6.22,
     "byStrategy": {
       "ICT": {
-        "total": 89,
+        "total": 90,
         "open": 1,
         "wins": 33,
-        "losses": 27,
-        "sumR": -5.2,
-        "winRate": 0.55,
-        "avgR": -0.09
+        "losses": 28,
+        "sumR": -6.22,
+        "winRate": 0.54,
+        "avgR": -0.1
       }
     },
-    "updatedAt": 1788262118558
+    "updatedAt": 1788346978000
   },
   "recent": [
+    {
+      "id": "ICT:GBPUSD:1788342300",
+      "strategy": "ICT",
+      "epic": "GBPUSD",
+      "name": "GBPUSD",
+      "dir": "SHORT",
+      "entry": 1.35,
+      "sl": 1.35,
+      "tp1": 1.35,
+      "tp2": 1.35,
+      "confidence": 50,
+      "openedAt": 1788342300,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
     {
       "id": "ICT:GOLD:1788258300",
       "strategy": "ICT",
@@ -45,10 +63,10 @@
       "tp2": 4422.4,
       "confidence": 60,
       "openedAt": 1788258300,
-      "status": "open",
-      "rMultiple": null,
+      "status": "loss",
+      "rMultiple": -1.02,
       "hitTP1": false,
-      "closedAt": null,
+      "closedAt": 1788265800,
       "confluence": false
     },
     {
@@ -463,24 +481,6 @@
       "rMultiple": 0,
       "hitTP1": false,
       "closedAt": 1787323510,
-      "confluence": false
-    },
-    {
-      "id": "ICT:GBPUSD:1787058000",
-      "strategy": "ICT",
-      "epic": "GBPUSD",
-      "name": "GBPUSD",
-      "dir": "LONG",
-      "entry": 1.35,
-      "sl": 1.35,
-      "tp1": 1.35,
-      "tp2": 1.35,
-      "confidence": 50,
-      "openedAt": 1787058000,
-      "status": "breakeven",
-      "rMultiple": 0,
-      "hitTP1": false,
-      "closedAt": 1787318076,
       "confluence": false
     }
   ]
