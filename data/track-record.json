@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1788603812764,
+  "updatedAt": 1788691323797,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,12 +9,12 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1788603812764
+    "updatedAt": 1788691323797
   },
   "ict": {
     "total": 92,
-    "open": 1,
-    "closed": 91,
+    "open": 0,
+    "closed": 92,
     "wins": 34,
     "losses": 29,
     "winRate": 0.54,
@@ -22,7 +22,7 @@
     "byStrategy": {
       "ICT": {
         "total": 92,
-        "open": 1,
+        "open": 0,
         "wins": 34,
         "losses": 29,
         "sumR": -6.76,
@@ -30,7 +30,7 @@
         "avgR": -0.11
       }
     },
-    "updatedAt": 1788603812764
+    "updatedAt": 1788691323797
   },
   "recent": [
     {
@@ -81,10 +81,10 @@
       "tp2": 1.35,
       "confidence": 50,
       "openedAt": 1788342300,
-      "status": "open",
-      "rMultiple": null,
+      "status": "breakeven",
+      "rMultiple": 0,
       "hitTP1": false,
-      "closedAt": null,
+      "closedAt": 1788612876,
       "confluence": false
     },
     {
