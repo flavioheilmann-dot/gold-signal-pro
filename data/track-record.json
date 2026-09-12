@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1789124436872,
+  "updatedAt": 1789208982495,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,30 +9,66 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1789124436872
+    "updatedAt": 1789208982494
   },
   "ict": {
-    "total": 94,
-    "open": 0,
-    "closed": 94,
-    "wins": 35,
+    "total": 96,
+    "open": 1,
+    "closed": 95,
+    "wins": 36,
     "losses": 30,
-    "winRate": 0.54,
-    "sumR": -6.3,
+    "winRate": 0.55,
+    "sumR": -5.82,
     "byStrategy": {
       "ICT": {
-        "total": 94,
-        "open": 0,
-        "wins": 35,
+        "total": 96,
+        "open": 1,
+        "wins": 36,
         "losses": 30,
-        "sumR": -6.3,
-        "winRate": 0.54,
-        "avgR": -0.1
+        "sumR": -5.82,
+        "winRate": 0.55,
+        "avgR": -0.09
       }
     },
-    "updatedAt": 1789124436872
+    "updatedAt": 1789208982495
   },
   "recent": [
+    {
+      "id": "ICT:GBPUSD:1789132500",
+      "strategy": "ICT",
+      "epic": "GBPUSD",
+      "name": "GBPUSD",
+      "dir": "LONG",
+      "entry": 1.35,
+      "sl": 1.35,
+      "tp1": 1.36,
+      "tp2": 1.36,
+      "confidence": 50,
+      "openedAt": 1789132500,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
+    {
+      "id": "ICT:BTCUSD:1789131600",
+      "strategy": "ICT",
+      "epic": "BTCUSD",
+      "name": "BTCUSD",
+      "dir": "LONG",
+      "entry": 77659.93,
+      "sl": 76057.32,
+      "tp1": 79262.53,
+      "tp2": 80865.13,
+      "confidence": 75,
+      "openedAt": 1789131600,
+      "status": "win",
+      "rMultiple": 0.48,
+      "hitTP1": true,
+      "closedAt": 1789141500,
+      "confluence": false
+    },
     {
       "id": "ICT:US100:1788962400",
       "strategy": "ICT",
@@ -445,42 +481,6 @@
       "rMultiple": -1.02,
       "hitTP1": false,
       "closedAt": 1787265000,
-      "confluence": false
-    },
-    {
-      "id": "ICT:BTCUSD:1787256000",
-      "strategy": "ICT",
-      "epic": "BTCUSD",
-      "name": "BTCUSD",
-      "dir": "LONG",
-      "entry": 72960.43,
-      "sl": 72270.77,
-      "tp1": 73650.08,
-      "tp2": 74339.74,
-      "confidence": 75,
-      "openedAt": 1787256000,
-      "status": "win",
-      "rMultiple": 0.48,
-      "hitTP1": true,
-      "closedAt": 1787256900,
-      "confluence": false
-    },
-    {
-      "id": "ICT:BTCUSD:1787238000",
-      "strategy": "ICT",
-      "epic": "BTCUSD",
-      "name": "BTCUSD",
-      "dir": "LONG",
-      "entry": 72627.45,
-      "sl": 71327.29,
-      "tp1": 73927.61,
-      "tp2": 75227.78,
-      "confidence": 75,
-      "openedAt": 1787238000,
-      "status": "win",
-      "rMultiple": 0.48,
-      "hitTP1": true,
-      "closedAt": 1787238900,
       "confluence": false
     }
   ]
