@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1789208982495,
+  "updatedAt": 1789299162552,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,7 +9,7 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1789208982494
+    "updatedAt": 1789299162552
   },
   "ict": {
     "total": 96,
@@ -30,7 +30,7 @@
         "avgR": -0.09
       }
     },
-    "updatedAt": 1789208982495
+    "updatedAt": 1789299162552
   },
   "recent": [
     {
