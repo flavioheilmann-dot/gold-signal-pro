@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1792148891820,
+  "updatedAt": 1792232853648,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,11 +9,11 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1792148891819
+    "updatedAt": 1792232853648
   },
   "ict": {
-    "total": 107,
-    "open": 1,
+    "total": 108,
+    "open": 2,
     "closed": 106,
     "wins": 40,
     "losses": 36,
@@ -21,8 +21,8 @@
     "sumR": -7.02,
     "byStrategy": {
       "ICT": {
-        "total": 107,
-        "open": 1,
+        "total": 108,
+        "open": 2,
         "wins": 40,
         "losses": 36,
         "sumR": -7.02,
@@ -30,9 +30,27 @@
         "avgR": -0.09
       }
     },
-    "updatedAt": 1792148891819
+    "updatedAt": 1792232853648
   },
   "recent": [
+    {
+      "id": "ICT:BTCUSD:1792173600",
+      "strategy": "ICT",
+      "epic": "BTCUSD",
+      "name": "BTCUSD",
+      "dir": "SHORT",
+      "entry": 80879.95,
+      "sl": 81741.99,
+      "tp1": 80017.91,
+      "tp2": 79155.87,
+      "confidence": 60,
+      "openedAt": 1792173600,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
     {
       "id": "ICT:BTCUSD:1792080000",
       "strategy": "ICT",
@@ -463,24 +481,6 @@
       "rMultiple": 0,
       "hitTP1": false,
       "closedAt": 1788009575,
-      "confluence": false
-    },
-    {
-      "id": "ICT:GBPUSD:1787642100",
-      "strategy": "ICT",
-      "epic": "GBPUSD",
-      "name": "GBPUSD",
-      "dir": "LONG",
-      "entry": 1.36,
-      "sl": 1.36,
-      "tp1": 1.37,
-      "tp2": 1.37,
-      "confidence": 65,
-      "openedAt": 1787642100,
-      "status": "breakeven",
-      "rMultiple": 0,
-      "hitTP1": false,
-      "closedAt": 1787936008,
       "confluence": false
     }
   ]
