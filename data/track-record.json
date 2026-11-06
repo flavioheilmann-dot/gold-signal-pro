@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1793888824906,
+  "updatedAt": 1793973798040,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,30 +9,66 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1793888824905
+    "updatedAt": 1793973798040
   },
   "ict": {
-    "total": 115,
+    "total": 117,
     "open": 1,
-    "closed": 114,
-    "wins": 42,
-    "losses": 41,
+    "closed": 116,
+    "wins": 43,
+    "losses": 42,
     "winRate": 0.51,
-    "sumR": -10.16,
+    "sumR": -10.7,
     "byStrategy": {
       "ICT": {
-        "total": 115,
+        "total": 117,
         "open": 1,
-        "wins": 42,
-        "losses": 41,
-        "sumR": -10.16,
+        "wins": 43,
+        "losses": 42,
+        "sumR": -10.7,
         "winRate": 0.51,
-        "avgR": -0.12
+        "avgR": -0.13
       }
     },
-    "updatedAt": 1793888824906
+    "updatedAt": 1793973798040
   },
   "recent": [
+    {
+      "id": "ICT:GOLD:1793959800",
+      "strategy": "ICT",
+      "epic": "GOLD",
+      "name": "GOLD",
+      "dir": "SHORT",
+      "entry": 4068.36,
+      "sl": 4073.83,
+      "tp1": 4062.89,
+      "tp2": 4057.41,
+      "confidence": 75,
+      "openedAt": 1793959800,
+      "status": "open",
+      "rMultiple": null,
+      "hitTP1": false,
+      "closedAt": null,
+      "confluence": false
+    },
+    {
+      "id": "ICT:GOLD:1793899500",
+      "strategy": "ICT",
+      "epic": "GOLD",
+      "name": "GOLD",
+      "dir": "SHORT",
+      "entry": 4113.35,
+      "sl": 4123.79,
+      "tp1": 4102.9,
+      "tp2": 4092.46,
+      "confidence": 60,
+      "openedAt": 1793899500,
+      "status": "win",
+      "rMultiple": 0.48,
+      "hitTP1": true,
+      "closedAt": 1793907000,
+      "confluence": false
+    },
     {
       "id": "ICT:BTCUSD:1793808000",
       "strategy": "ICT",
@@ -45,10 +81,10 @@
       "tp2": 85566.79,
       "confidence": 75,
       "openedAt": 1793808000,
-      "status": "open",
-      "rMultiple": null,
+      "status": "loss",
+      "rMultiple": -1.02,
       "hitTP1": false,
-      "closedAt": null,
+      "closedAt": 1793889900,
       "confluence": false
     },
     {
@@ -445,42 +481,6 @@
       "rMultiple": 1.48,
       "hitTP1": true,
       "closedAt": 1788775200,
-      "confluence": false
-    },
-    {
-      "id": "ICT:GOLD:1788465900",
-      "strategy": "ICT",
-      "epic": "GOLD",
-      "name": "GOLD",
-      "dir": "SHORT",
-      "entry": 4473.63,
-      "sl": 4481.01,
-      "tp1": 4466.24,
-      "tp2": 4458.86,
-      "confidence": 60,
-      "openedAt": 1788465900,
-      "status": "loss",
-      "rMultiple": -1.02,
-      "hitTP1": false,
-      "closedAt": 1788480000,
-      "confluence": false
-    },
-    {
-      "id": "ICT:GOLD:1788371700",
-      "strategy": "ICT",
-      "epic": "GOLD",
-      "name": "GOLD",
-      "dir": "LONG",
-      "entry": 4377.14,
-      "sl": 4364.46,
-      "tp1": 4389.82,
-      "tp2": 4402.5,
-      "confidence": 75,
-      "openedAt": 1788371700,
-      "status": "win",
-      "rMultiple": 0.48,
-      "hitTP1": true,
-      "closedAt": 1788372000,
       "confluence": false
     }
   ]
