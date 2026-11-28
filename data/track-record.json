@@ -1,5 +1,5 @@
 {
-  "updatedAt": 1795796872304,
+  "updatedAt": 1795879218129,
   "box": {
     "total": 0,
     "open": 0,
@@ -9,30 +9,48 @@
     "winRate": 0,
     "sumR": 0,
     "byStrategy": {},
-    "updatedAt": 1795796872303
+    "updatedAt": 1795879218129
   },
   "ict": {
-    "total": 121,
+    "total": 122,
     "open": 0,
-    "closed": 121,
+    "closed": 122,
     "wins": 45,
-    "losses": 44,
-    "winRate": 0.51,
-    "sumR": -11.78,
+    "losses": 45,
+    "winRate": 0.5,
+    "sumR": -12.8,
     "byStrategy": {
       "ICT": {
-        "total": 121,
+        "total": 122,
         "open": 0,
         "wins": 45,
-        "losses": 44,
-        "sumR": -11.78,
-        "winRate": 0.51,
-        "avgR": -0.13
+        "losses": 45,
+        "sumR": -12.8,
+        "winRate": 0.5,
+        "avgR": -0.14
       }
     },
-    "updatedAt": 1795796872304
+    "updatedAt": 1795879218129
   },
   "recent": [
+    {
+      "id": "ICT:GOLD:1795802700",
+      "strategy": "ICT",
+      "epic": "GOLD",
+      "name": "GOLD",
+      "dir": "LONG",
+      "entry": 3652.97,
+      "sl": 3643.76,
+      "tp1": 3662.18,
+      "tp2": 3671.38,
+      "confidence": 75,
+      "openedAt": 1795802700,
+      "status": "loss",
+      "rMultiple": -1.02,
+      "hitTP1": false,
+      "closedAt": 1795803300,
+      "confluence": false
+    },
     {
       "id": "ICT:US500:1795445100",
       "strategy": "ICT",
@@ -463,24 +481,6 @@
       "rMultiple": 1.48,
       "hitTP1": true,
       "closedAt": 1790597700,
-      "confluence": false
-    },
-    {
-      "id": "ICT:GOLD:1789640700",
-      "strategy": "ICT",
-      "epic": "GOLD",
-      "name": "GOLD",
-      "dir": "LONG",
-      "entry": 4314.66,
-      "sl": 4304.59,
-      "tp1": 4324.74,
-      "tp2": 4334.81,
-      "confidence": 60,
-      "openedAt": 1789640700,
-      "status": "win",
-      "rMultiple": 1.48,
-      "hitTP1": true,
-      "closedAt": 1789642800,
       "confluence": false
     }
   ]
